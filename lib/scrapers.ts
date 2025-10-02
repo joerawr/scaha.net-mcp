@@ -1,5 +1,11 @@
 import * as cheerio from 'cheerio';
-import { TeamStats, PlayerStats, Game } from './types';
+import {
+  TeamStats,
+  PlayerStats,
+  Game,
+  SelectOption,
+  ScoreboardOptionState,
+} from './types';
 import { normalizeTeamName, teamNamesMatch, parseScore } from './utils';
 
 const BASE_URL = 'https://www.scaha.net';
@@ -17,7 +23,7 @@ interface JSFSession {
 /**
  * Extract JSESSIONID and ViewState from initial page load
  */
-async function initJSFSession(url: string): Promise<JSFSession> {
+async function initJSFSession(url: string): Promise<{ session: JSFSession; html: string }>{
   const response = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; SCAHA-MCP/1.0)',
@@ -36,9 +42,9 @@ async function initJSFSession(url: string): Promise<JSFSession> {
   // Extract ViewState from HTML
   const html = await response.text();
   const $ = cheerio.load(html);
-  const viewState = $('input[name="javax.faces.ViewState"]').val() as string || '';
+  const viewState = ($('input[name="javax.faces.ViewState"]').val() as string) || '';
 
-  return { jsessionid, viewState };
+  return { session: { jsessionid, viewState }, html };
 }
 
 /**
@@ -68,7 +74,155 @@ async function submitJSFForm(
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
-  return response.text();
+  const text = await response.text();
+
+  const viewStateMatch = text.match(
+    /<update id="javax\.faces\.ViewState"><!\[CDATA\[(.*?)\]\]><\/update>/s
+  );
+
+  if (viewStateMatch && viewStateMatch[1]) {
+    session.viewState = viewStateMatch[1];
+  }
+
+  return text;
+}
+
+function escapeId(id: string): string {
+  return `#${id.replace(/:/g, '\\:')}`;
+}
+
+function parseSelectOptionsFromDoc(
+  $: cheerio.CheerioAPI,
+  elementId: string
+): SelectOption[] {
+  const selector = escapeId(elementId);
+  const options: SelectOption[] = [];
+
+  $(selector)
+    .find('option')
+    .each((_, option) => {
+      const el = $(option);
+      options.push({
+        value: el.attr('value') ?? '',
+        label: el.text().trim(),
+        selected: el.is(':selected') || el.attr('selected') !== undefined,
+      });
+    });
+
+  return options;
+}
+
+function parseScoreboardOptionState(html: string): ScoreboardOptionState {
+  const $ = cheerio.load(html);
+  return {
+    seasons: parseSelectOptionsFromDoc($, 'j_id_4c:j_id_4jInner'),
+    schedules: parseSelectOptionsFromDoc($, 'j_id_4c:j_id_4mInner'),
+    teams: parseSelectOptionsFromDoc($, 'j_id_4c:j_id_4pInner'),
+  };
+}
+
+function extractUpdatedFormHtml(partialResponse: string): string | null {
+  const targetedMatch = partialResponse.match(
+    /<update id="j_id_4c"><!\[CDATA\[(.*?)\]\]><\/update>/s
+  );
+
+  if (targetedMatch && targetedMatch[1]) {
+    return targetedMatch[1];
+  }
+
+  const fragments = [...partialResponse.matchAll(/<!\[CDATA\[(.*?)\]\]>/gs)].map(
+    ([, fragment]) => fragment
+  );
+
+  return fragments.length ? fragments.join('') : null;
+}
+
+function findOptionByLabel(options: SelectOption[], query: string): SelectOption | undefined {
+  const normalizedQuery = query.trim().toLowerCase();
+  return (
+    options.find((opt) => opt.label.toLowerCase() === normalizedQuery) ||
+    options.find((opt) => opt.label.toLowerCase().includes(normalizedQuery))
+  );
+}
+
+export async function getScoreboardOptionsState(
+  seasonQuery?: string,
+  scheduleQuery?: string,
+  teamQuery?: string
+): Promise<ScoreboardOptionState> {
+  const { session, html } = await initJSFSession(SCOREBOARD_URL);
+  let optionState = parseScoreboardOptionState(html);
+
+  if (seasonQuery) {
+    const targetSeason = findOptionByLabel(optionState.seasons, seasonQuery);
+
+    if (!targetSeason) {
+      throw new Error(`Season "${seasonQuery}" not found on scoreboard page.`);
+    }
+
+    if (!targetSeason.selected) {
+      const partial = await submitJSFForm(SCOREBOARD_URL, session, {
+        'j_id_4c:j_id_4jInner': targetSeason.value,
+        'j_id_4c:j_id_4mInner': '0',
+        'j_id_4c:j_id_4pInner': '0',
+        'j_id_4c_SUBMIT': '1',
+      });
+
+      const updatedHtml = extractUpdatedFormHtml(partial);
+      if (updatedHtml) {
+        optionState = parseScoreboardOptionState(updatedHtml);
+      }
+    }
+  }
+
+  if (scheduleQuery) {
+    const targetSchedule = findOptionByLabel(optionState.schedules, scheduleQuery);
+
+    if (!targetSchedule) {
+      throw new Error(`Schedule "${scheduleQuery}" not found on scoreboard page.`);
+    }
+
+    if (!targetSchedule.selected) {
+      const currentSeason = optionState.seasons.find(s => s.selected);
+      const partial = await submitJSFForm(SCOREBOARD_URL, session, {
+        'j_id_4c:j_id_4jInner': currentSeason?.value || '0',
+        'j_id_4c:j_id_4mInner': targetSchedule.value,
+        'j_id_4c:j_id_4pInner': '0',
+        'j_id_4c_SUBMIT': '1',
+      });
+
+      const updatedHtml = extractUpdatedFormHtml(partial);
+      if (updatedHtml) {
+        optionState = parseScoreboardOptionState(updatedHtml);
+      }
+    }
+  }
+
+  if (teamQuery) {
+    const targetTeam = findOptionByLabel(optionState.teams, teamQuery);
+
+    if (!targetTeam) {
+      throw new Error(`Team "${teamQuery}" not found on scoreboard page.`);
+    }
+
+    if (!targetTeam.selected) {
+      const currentSeason = optionState.seasons.find(s => s.selected);
+      const currentSchedule = optionState.schedules.find(s => s.selected);
+      const partial = await submitJSFForm(SCOREBOARD_URL, session, {
+        'j_id_4c:j_id_4jInner': currentSeason?.value || '0',
+        'j_id_4c:j_id_4mInner': currentSchedule?.value || '0',
+        'j_id_4c:j_id_4pInner': targetTeam.value,
+        'j_id_4c_SUBMIT': '1',
+      });
+
+      const updatedHtml = extractUpdatedFormHtml(partial);
+      if (updatedHtml) {
+        optionState = parseScoreboardOptionState(updatedHtml);
+      }
+    }
+  }
+
+  return optionState;
 }
 
 /**
@@ -79,19 +233,7 @@ export async function scrapeStandings(
   season: string,
   division: string
 ): Promise<TeamStats[]> {
-  // Initialize JSF session
-  const session = await initJSFSession(SCOREBOARD_URL);
-
-  // For now, just load the page and parse what's there
-  // TODO: Submit form to select specific season/division
-  const response = await fetch(SCOREBOARD_URL, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; SCAHA-MCP/1.0)',
-      'Cookie': `JSESSIONID=${session.jsessionid}`,
-    },
-  });
-
-  const html = await response.text();
+  const { html } = await initJSFSession(SCOREBOARD_URL);
   const $ = cheerio.load(html);
 
   const standings: TeamStats[] = [];
@@ -143,18 +285,7 @@ export async function scrapePlayerStats(
   division: string,
   teamSlug: string
 ): Promise<PlayerStats[]> {
-  // Initialize JSF session
-  const session = await initJSFSession(STATS_CENTRAL_URL);
-
-  // Load the stats central page
-  const response = await fetch(STATS_CENTRAL_URL, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; SCAHA-MCP/1.0)',
-      'Cookie': `JSESSIONID=${session.jsessionid}`,
-    },
-  });
-
-  const html = await response.text();
+  const { html } = await initJSFSession(STATS_CENTRAL_URL);
   const $ = cheerio.load(html);
 
   const players: PlayerStats[] = [];
@@ -224,18 +355,7 @@ export async function downloadScheduleCSV(
   division?: string,
   teamSlug?: string
 ): Promise<string> {
-  // Initialize JSF session
-  const session = await initJSFSession(SCOREBOARD_URL);
-
-  // Load the scoreboard page
-  const response = await fetch(SCOREBOARD_URL, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; SCAHA-MCP/1.0)',
-      'Cookie': `JSESSIONID=${session.jsessionid}`,
-    },
-  });
-
-  const html = await response.text();
+  const { html } = await initJSFSession(SCOREBOARD_URL);
   const $ = cheerio.load(html);
 
   // Parse schedule/games table and convert to CSV

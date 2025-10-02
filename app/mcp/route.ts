@@ -6,11 +6,46 @@ import {
   getSchedule,
   downloadScheduleCSV,
 } from '@/lib/scrapers';
+import {
+  getScoreboardOptionsWithBrowser,
+  downloadScheduleCSVWithBrowser,
+} from '@/lib/browser-scrapers';
 
 export const maxDuration = 300; // 5 minutes for Vercel
 
 const handler = createMcpHandler(
   (server) => {
+    server.tool(
+      'list_schedule_options',
+      'List available seasons, schedules, and teams from the scoreboard page',
+      {
+        season: z
+          .string()
+          .optional()
+          .describe('Optional season name (e.g., "SCAHA 2025/26 Season") to target'),
+        schedule: z
+          .string()
+          .optional()
+          .describe('Optional schedule name (e.g., "14U B Regular Season") to target'),
+        team: z
+          .string()
+          .optional()
+          .describe('Optional team name to target'),
+      },
+      async ({ season, schedule, team }) => {
+        const options = await getScoreboardOptionsWithBrowser(season, schedule, team);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(options, null, 2),
+            },
+          ],
+        };
+      }
+    );
+
     server.tool(
       'get_team_stats',
       'Get team statistics from scaha.net standings',
@@ -121,17 +156,31 @@ const handler = createMcpHandler(
 
     server.tool(
       'get_schedule_csv',
-      'Download raw CSV schedule data from scaha.net (base64 encoded)',
+      'Download raw CSV schedule data from scaha.net using browser automation',
       {
-        season: z.string().describe('Season identifier (e.g., "2024-25")'),
-        division: z.string().optional().describe('Division name (optional filter)'),
-        team_slug: z.string().optional().describe('Team name (optional filter)'),
+        season: z.string().describe('Season name (e.g., "SCAHA 2025/26 Season" or "2025/26")'),
+        schedule: z.string().describe('Schedule name (e.g., "14U B Regular Season" or "14U B")'),
+        team: z.string().describe('Team name (e.g., "Jr. Kings (1)" or "Jr Kings")'),
       },
-      async ({ season, division, team_slug }) => {
-        const csvData = await downloadScheduleCSV(season, division, team_slug);
+      async ({ season, schedule, team }) => {
+        const csvData = await downloadScheduleCSVWithBrowser(season, schedule, team);
         const base64Data = Buffer.from(csvData).toString('base64');
 
-        const filename = `scaha_schedule_${season}${division ? `_${division}` : ''}${team_slug ? `_${team_slug}` : ''}.csv`;
+        // Extract year from season (e.g., "2025/26" -> "2025-26")
+        const yearMatch = season.match(/(\d{4})[\/-]?(\d{2,4})?/);
+        const year = yearMatch ? `${yearMatch[1]}-${yearMatch[2] || yearMatch[1].slice(-2)}` : 'unknown';
+
+        // Extract tier from schedule (e.g., "14U B Regular Season" -> "14U-B")
+        const tierMatch = schedule.match(/(\d+U)\s*([A-Z]+(?:\s*Div\s*\d+)?)/i);
+        const tier = tierMatch ? `${tierMatch[1]}-${tierMatch[2].replace(/\s+/g, '')}` : schedule.replace(/\s+/g, '-');
+
+        // Clean team name for filename
+        const teamClean = team.replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
+
+        // Generate timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+
+        const filename = `SCAHA_${year}_${tier}_${teamClean}_${timestamp}.csv`;
 
         return {
           content: [
@@ -141,6 +190,7 @@ const handler = createMcpHandler(
                 filename,
                 mime: 'text/csv',
                 data_base64: base64Data,
+                size_bytes: csvData.length,
               }, null, 2),
             },
           ],

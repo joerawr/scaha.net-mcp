@@ -75,3 +75,15 @@ export interface ScheduleCSVResponse {
   mime: string;
   data_base64: string;
 }
+
+export interface SelectOption {
+  value: string;
+  label: string;
+  selected: boolean;
+}
+
+export interface ScoreboardOptionState {
+  seasons: SelectOption[];
+  schedules: SelectOption[];
+  teams: SelectOption[];
+}
