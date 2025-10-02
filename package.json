@@ -1,0 +1,53 @@
+{
+  "name": "scaha-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Model Context Protocol (MCP) server that provides access to youth hockey data from scaha.net (Southern California Amateur Hockey Association).",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test:mcp": "node scripts/test-http.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joerawr/scaha.net-mcp.git"
+  },
+  "keywords": [
+    "mcp",
+    "hockey",
+    "scaha",
+    "youth-hockey"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/joerawr/scaha.net-mcp/issues"
+  },
+  "homepage": "https://github.com/joerawr/scaha.net-mcp#readme",
+  "dependencies": {
+    "@date-fns/tz": "^1.4.1",
+    "@modelcontextprotocol/sdk": "^1.18.2",
+    "cheerio": "^1.1.2",
+    "date-fns": "^4.1.0",
+    "mcp-handler": "^1.0.2",
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.14",
+    "@types/node": "^24.6.1",
+    "@types/react": "^19.1.17",
+    "@types/react-dom": "^19.1.11",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.36.0",
+    "eslint-config-next": "^15.5.4",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.14",
+    "typescript": "^5.9.3"
+  }
+}
