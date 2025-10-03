@@ -113,9 +113,70 @@ curl -s -X POST http://localhost:3000/mcp \
 
 **Note**: Browser automation takes ~5-10 seconds per request in development. Expect similar or slightly longer times on Vercel.
 
+## Integration Testing
+
+The server includes comprehensive integration tests that verify MCP tools are working correctly.
+
+### Quick Health Check
+```bash
+npm run test:health
+# Returns status of all tools
+```
+
+### Run Full Integration Tests
+```bash
+# Start server in one terminal
+npm run dev
+
+# Run tests in another terminal
+npm run test:integration
+```
+
+### Testing from Agent Applications
+Agent applications can run these tests to verify the MCP server is functioning before debugging their own integration code:
+
+```bash
+# Quick health check
+curl http://localhost:3000/mcp/health | jq
+
+# Clone and test locally
+git clone https://github.com/joerawr/scaha-mcp.git
+cd scaha-mcp
+npm install
+npm run dev  # In one terminal
+npm run test:integration  # In another terminal
+```
+
+**Test Coverage:**
+- ✅ Health check endpoint
+- ✅ `list_schedule_options` - seasons, schedules, teams
+- ✅ `get_schedule` - game schedules with date filtering
+- ✅ `get_schedule_csv` - CSV export with base64 encoding
+- ✅ Error handling for invalid inputs
+
+See `tests/README.md` for detailed testing documentation.
+
 ## Reference Data
 
 See `scaha_sample_schedule.csv` for example of scaha.net's CSV export format.
 See `PLAN.md` for complete implementation plan with phases.
-- add the fix and the request format
-- save request format
+See `tests/fixtures/expected-responses.json` for known test data and expected response structures.
+
+
+## GitHub Issue Pattern
+
+When creating GitHub issues for this repository, use the following format:
+
+```
+## Problem
+[Clear problem statement]
+
+## Solution
+[Proposed fix or approach]
+
+## Rabbit holes
+[One line or short list of things or topics to avoid]
+
+## No gos
+[Things that should not be done, e.g., "Changing SDKs or anything that would trigger a 2.0.0 version"]
+```

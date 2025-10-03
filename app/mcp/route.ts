@@ -132,16 +132,42 @@ const handler = createMcpHandler(
       'get_schedule',
       'Get game schedule from scaha.net with optional filters',
       {
-        season: z.string().describe('Season identifier (e.g., "2024-25")'),
-        division: z.string().optional().describe('Division name (optional filter)'),
-        team_slug: z.string().optional().describe('Team name (optional filter)'),
-        date_range: z.object({
-          start: z.string().describe('Start date in YYYY-MM-DD format'),
-          end: z.string().describe('End date in YYYY-MM-DD format'),
-        }).optional().describe('Date range filter (optional)'),
+        season: z.string().describe('Season name (e.g., "2025/26")'),
+        schedule: z.string().describe('Schedule name (e.g., "14U B")'),
+        team: z.string().describe('Team name (e.g., "Jr. Kings (1)")'),
+        date: z.string().optional().describe('Filter to specific date (YYYY-MM-DD format)'),
       },
-      async ({ season, division, team_slug, date_range }) => {
-        const games = await getSchedule(season, division, team_slug, date_range);
+      async ({ season, schedule, team, date }) => {
+        // Use browser automation to get CSV
+        const csvData = await downloadScheduleCSVWithBrowser(season, schedule, team);
+
+        // Parse CSV manually
+        const lines = csvData.trim().split('\n');
+        const games = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const match = lines[i].match(/"([^"]+)","([^"]+)","([^"]+)","([^"]+)","([^"]+)","([^"]+)","([^"]+)","([^"]+)","([^"]+)","([^"]+)","([^"]+)"/);
+          if (match) {
+            const gameDate = match[2];
+
+            // Filter by date if specified
+            if (date && gameDate !== date) continue;
+
+            games.push({
+              game_id: match[1],
+              date: gameDate,
+              time: match[3],
+              type: match[4],
+              status: match[5],
+              home: match[6],
+              home_score: match[7] === '--' ? null : parseInt(match[7]),
+              away: match[8],
+              away_score: match[9] === '--' ? null : parseInt(match[9]),
+              venue: match[10],
+              rink: match[11]
+            });
+          }
+        }
 
         return {
           content: [

@@ -1,4 +1,4 @@
-import puppeteer from 'puppeteer-core';
+import puppeteer, { type Page } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import { SelectOption, ScoreboardOptionState } from './types';
 
@@ -14,7 +14,7 @@ async function getBrowserConfig() {
     return {
       args: chromium.args,
       executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
+      headless: true,
     };
   }
 
@@ -29,13 +29,16 @@ async function getBrowserConfig() {
 /**
  * Extract select options from a dropdown element
  */
-async function extractSelectOptions(page: puppeteer.Page, selector: string): Promise<SelectOption[]> {
-  return page.$$eval(selector, (options: HTMLOptionElement[]) =>
-    options.map(opt => ({
-      value: opt.value,
-      label: opt.textContent?.trim() || '',
-      selected: opt.selected,
-    }))
+async function extractSelectOptions(page: Page, selector: string): Promise<SelectOption[]> {
+  return page.$$eval(selector, (options: Element[]) =>
+    options.map(opt => {
+      const htmlOpt = opt as HTMLOptionElement;
+      return {
+        value: htmlOpt.value,
+        label: htmlOpt.textContent?.trim() || '',
+        selected: htmlOpt.selected,
+      };
+    })
   );
 }
 

@@ -1,0 +1,152 @@
+{
+  "list_schedule_options": {
+    "description": "Expected structure when listing schedule options",
+    "minimal_response": {
+      "seasons": [
+        {
+          "value": "0",
+          "label": "Select a Season...",
+          "selected": false
+        },
+        {
+          "value": "2",
+          "label": "SCAHA 2025/26 Season",
+          "selected": true
+        }
+      ],
+      "schedules": [
+        {
+          "value": "0",
+          "label": "Select a Schedule...",
+          "selected": false
+        },
+        {
+          "value": "8",
+          "label": "14U B Regular Season",
+          "selected": false
+        }
+      ],
+      "teams": [
+        {
+          "value": "0",
+          "label": "Schedule For All Teams...",
+          "selected": true
+        }
+      ]
+    }
+  },
+  "get_schedule": {
+    "description": "Expected game structure from get_schedule",
+    "example_game": {
+      "game_id": "149152265",
+      "date": "2025-10-05",
+      "time": "16:15:00",
+      "type": "Game",
+      "status": "Scheduled",
+      "home": "Jr. Kings (1)",
+      "home_score": null,
+      "away": "Heat",
+      "away_score": null,
+      "venue": "Paramount Ice Land",
+      "rink": "NHL"
+    },
+    "example_completed_game": {
+      "game_id": "149152301",
+      "date": "2025-09-07",
+      "time": "14:30:00",
+      "type": "Game",
+      "status": "Final",
+      "home": "Jr. Kings (1)",
+      "home_score": 6,
+      "away": "Surf",
+      "away_score": 0,
+      "venue": "Paramount Ice Land",
+      "rink": "NHL"
+    }
+  },
+  "get_schedule_csv": {
+    "description": "Expected structure from get_schedule_csv",
+    "example_response": {
+      "filename": "SCAHA_2025-26_14U-B_Jr_Kings_1__2025-10-02T06-34-56.csv",
+      "mime": "text/csv",
+      "data_base64": "...(base64 encoded CSV data)...",
+      "size_bytes": 1234
+    },
+    "csv_headers": "\"Game #\",\"Date\",\"Time\",\"Type\",\"Status\",\"Home\",\"Score\",\"Away\",\"Score\",\"Venue\",\"Rink\"",
+    "csv_example_row": "\"149152265\",\"2025-10-05\",\"16:15:00\",\"Game\",\"Scheduled\",\"Jr. Kings (1)\",\"--\",\"Heat\",\"--\",\"Paramount Ice Land\",\"NHL\""
+  },
+  "test_data": {
+    "description": "Known test data points for verification",
+    "verified_games": [
+      {
+        "season": "2025/26",
+        "schedule": "14U B",
+        "team": "Jr. Kings (1)",
+        "date": "2025-10-05",
+        "opponent": "Heat",
+        "time": "16:15:00",
+        "venue": "Paramount Ice Land"
+      },
+      {
+        "season": "2025/26",
+        "schedule": "14U B",
+        "team": "Jr. Kings (1)",
+        "date": "2025-09-07",
+        "opponent": "Surf",
+        "time": "14:30:00",
+        "home_score": 6,
+        "away_score": 0,
+        "status": "Final"
+      }
+    ],
+    "known_teams": {
+      "14U_B_2025_26": [
+        "Jr. Kings (1)",
+        "Heat",
+        "Surf",
+        "Avalanche",
+        "Empire HC",
+        "OC Hockey (1)"
+      ]
+    },
+    "known_schedules": {
+      "2025_26": [
+        "10U B",
+        "10U BB",
+        "10U A",
+        "12U B",
+        "12U BB",
+        "12U A",
+        "12U AA",
+        "14U B",
+        "14U BB",
+        "14U A",
+        "14U AA",
+        "16U A",
+        "16U AA",
+        "18U AA",
+        "Mite A",
+        "Mite B"
+      ]
+    }
+  },
+  "parameter_formats": {
+    "description": "Correct parameter formats for each tool",
+    "list_schedule_options": {
+      "season": "2025/26 (short form, NOT 'SCAHA 2025/26 Season')",
+      "schedule": "14U B (short form, NOT '14U B Regular Season')",
+      "team": "Jr. Kings (1) (exact name with spaces and parentheses)"
+    },
+    "get_schedule": {
+      "season": "2025/26",
+      "schedule": "14U B",
+      "team": "Jr. Kings (1)",
+      "date": "2025-10-05 (YYYY-MM-DD format, optional)"
+    },
+    "get_schedule_csv": {
+      "season": "2025/26",
+      "schedule": "14U B",
+      "team": "Jr. Kings (1)"
+    }
+  }
+}
