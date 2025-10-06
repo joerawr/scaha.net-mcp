@@ -1,0 +1,53 @@
+# Source files (only publish dist/)
+src/
+*.ts
+!*.d.ts
+tsconfig.json
+
+# Development files
+node_modules/
+.git/
+.github/
+.gitignore
+
+# Test files
+test/
+tests/
+*.test.js
+*.spec.js
+
+# Next.js files (from old branch)
+.next/
+app/
+components/
+public/
+next.config.ts
+tailwind.config.ts
+postcss.config.mjs
+.eslintrc.json
+
+# Scripts
+scripts/
+
+# Environment files
+.env
+.env.local
+.env*.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Misc
+*.tgz
+coverage/
+vitest.config.ts
