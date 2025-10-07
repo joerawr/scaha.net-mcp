@@ -24,7 +24,7 @@ import { listScheduleOptionsTool } from '../../../src/tools/list_schedule_option
  * Some transports (including Streamable HTTP) wrap tool arguments under an
  * `arguments` key. Normalise so the existing tool handlers keep working.
  */
-function resolveToolArgs(args: unknown) {
+function resolveToolArgs(args: unknown, toolName: string) {
   if (
     args &&
     typeof args === 'object' &&
@@ -32,9 +32,18 @@ function resolveToolArgs(args: unknown) {
     typeof (args as Record<string, unknown>).arguments === 'object' &&
     (args as Record<string, unknown>).arguments !== null
   ) {
-    return (args as { arguments: unknown }).arguments;
+    const normalized = (args as { arguments: unknown }).arguments;
+    console.log(
+      `[scaha-mcp] Normalized arguments for ${toolName}:`,
+      JSON.stringify(normalized)
+    );
+    return normalized;
   }
 
+  console.log(
+    `[scaha-mcp] Using raw arguments for ${toolName}:`,
+    JSON.stringify(args)
+  );
   return args;
 }
 
@@ -48,7 +57,9 @@ const handler = createMcpHandler(
       getScheduleTool.definition.description || '',
       getScheduleTool.definition.inputSchema as any,
       async (args) => {
-        const result = await getScheduleTool.handler(resolveToolArgs(args));
+        const result = await getScheduleTool.handler(
+          resolveToolArgs(args, getScheduleTool.definition.name)
+        );
         return result;
       }
     );
@@ -59,7 +70,9 @@ const handler = createMcpHandler(
       getTeamStatsTool.definition.description || '',
       getTeamStatsTool.definition.inputSchema as any,
       async (args) => {
-        const result = await getTeamStatsTool.handler(resolveToolArgs(args));
+        const result = await getTeamStatsTool.handler(
+          resolveToolArgs(args, getTeamStatsTool.definition.name)
+        );
         return result;
       }
     );
@@ -70,7 +83,9 @@ const handler = createMcpHandler(
       getPlayerStatsTool.definition.description || '',
       getPlayerStatsTool.definition.inputSchema as any,
       async (args) => {
-        const result = await getPlayerStatsTool.handler(resolveToolArgs(args));
+        const result = await getPlayerStatsTool.handler(
+          resolveToolArgs(args, getPlayerStatsTool.definition.name)
+        );
         return result;
       }
     );
@@ -81,7 +96,9 @@ const handler = createMcpHandler(
       getScheduleCSVTool.definition.description || '',
       getScheduleCSVTool.definition.inputSchema as any,
       async (args) => {
-        const result = await getScheduleCSVTool.handler(resolveToolArgs(args));
+        const result = await getScheduleCSVTool.handler(
+          resolveToolArgs(args, getScheduleCSVTool.definition.name)
+        );
         return result;
       }
     );
@@ -93,7 +110,7 @@ const handler = createMcpHandler(
       listScheduleOptionsTool.definition.inputSchema as any,
       async (args) => {
         const result = await listScheduleOptionsTool.handler(
-          resolveToolArgs(args)
+          resolveToolArgs(args, listScheduleOptionsTool.definition.name)
         );
         return result;
       }
