@@ -1,6 +1,6 @@
 {
   "name": "@joerawr/scaha-mcp",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "MCP server for SCAHA hockey schedule data via Puppeteer scraping",
   "type": "module",
   "bin": {
@@ -13,9 +13,14 @@
   ],
   "scripts": {
     "build": "tsc && chmod +x dist/index.js",
+    "build:stdio": "tsc && chmod +x dist/index.js",
+    "build:http": "next build",
+    "build:all": "npm run build:stdio && npm run build:http",
     "dev": "tsx src/index.ts",
+    "dev:http": "next dev",
     "test": "tsx src/index.ts",
-    "prepublishOnly": "npm run build"
+    "start": "next start",
+    "prepublishOnly": "npm run build:stdio"
   },
   "repository": {
     "type": "git",
@@ -36,17 +41,22 @@
   },
   "homepage": "https://github.com/joerawr/scaha.net-mcp#readme",
   "dependencies": {
+    "@date-fns/tz": "^1.4.1",
     "@modelcontextprotocol/sdk": "^1.18.2",
     "@sparticuz/chromium": "^140.0.0",
-    "puppeteer-core": "^24.23.0",
-    "zod": "^3.25.76",
-    "@date-fns/tz": "^1.4.1",
+    "cheerio": "^1.1.2",
     "date-fns": "^4.1.0",
-    "cheerio": "^1.1.2"
+    "mcp-handler": "^1.0.2",
+    "next": "^15.5.4",
+    "puppeteer-core": "^24.23.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^24.6.1",
-    "typescript": "^5.9.3",
-    "tsx": "^4.19.2"
+    "@types/react": "19.2.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
   }
 }

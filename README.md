@@ -16,7 +16,9 @@ Exposes scaha.net data through MCP tool calls:
 
 ## Installation
 
-### For Claude Desktop
+This MCP server supports two deployment modes:
+
+### 1. Local STDIO (Claude Desktop, Claude Code, Cursor, etc.)
 
 Add to your `claude_desktop_config.json`:
 
@@ -34,6 +36,19 @@ Add to your `claude_desktop_config.json`:
 **Config location**:
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+### 2. Remote HTTP (Deploy your own instance)
+
+Deploy the MCP server to any Node.js hosting platform that supports Next.js. Your deployed HTTP endpoint can be accessed by MCP clients that support HTTP transport.
+
+**Setup**:
+1. Clone the repository
+2. Run `npm install`
+3. Run `npm run build:http` to build the Next.js app
+4. Deploy the `app/` directory to your hosting platform
+5. Your MCP endpoint will be available at `https://your-domain.com/api/mcp`
+
+**Environment**: Requires Node.js 18+ and Chrome/Chromium for Puppeteer.
 
 ### For Development (from source)
 
@@ -133,7 +148,9 @@ This MCP server uses Puppeteer to scrape data from scaha.net. It handles:
 - CSV export downloads
 - Pacific timezone handling
 
-The server communicates via STDIO transport, making it compatible with Claude Desktop and other MCP clients.
+The server supports dual transports:
+- **STDIO**: For local MCP clients (Claude Desktop, Claude Code, Cursor)
+- **HTTP**: For remote deployment (self-hosted instances)
 
 ## Tech Stack
 
@@ -146,9 +163,12 @@ The server communicates via STDIO transport, making it compatible with Claude De
 ## Development
 
 ```bash
-npm install       # Install dependencies
-npm run build     # Build TypeScript
-npm run dev       # Run with tsx (no build needed)
+npm install           # Install dependencies
+npm run build         # Build STDIO transport (TypeScript)
+npm run build:http    # Build HTTP transport (Next.js)
+npm run build:all     # Build both transports
+npm run dev           # Run STDIO transport with tsx
+npm run dev:http      # Run HTTP transport with Next.js dev server
 ```
 
 ## Data Source
@@ -171,6 +191,12 @@ MIT
 Issues and pull requests welcome! Please report bugs at https://github.com/joerawr/scaha.net-mcp/issues
 
 ## Version History
+
+### 1.2.0 (2025-10-06)
+- Added dual-transport support (STDIO + HTTP)
+- HTTP endpoint for remote deployment
+- Next.js app structure for serverless hosting
+- Same tool implementations work for both transports
 
 ### 1.0.0 (2025-10-06)
 - Initial release

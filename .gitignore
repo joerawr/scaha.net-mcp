@@ -37,3 +37,9 @@ next-env.d.ts
 
 # claude
 .claude/
+
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+.vercel
