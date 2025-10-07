@@ -20,6 +20,24 @@ import { getPlayerStatsTool } from '../../../src/tools/get_player_stats.js';
 import { getScheduleCSVTool } from '../../../src/tools/get_schedule_csv.js';
 import { listScheduleOptionsTool } from '../../../src/tools/list_schedule_options.js';
 
+/**
+ * Some transports (including Streamable HTTP) wrap tool arguments under an
+ * `arguments` key. Normalise so the existing tool handlers keep working.
+ */
+function resolveToolArgs(args: unknown) {
+  if (
+    args &&
+    typeof args === 'object' &&
+    'arguments' in (args as Record<string, unknown>) &&
+    typeof (args as Record<string, unknown>).arguments === 'object' &&
+    (args as Record<string, unknown>).arguments !== null
+  ) {
+    return (args as { arguments: unknown }).arguments;
+  }
+
+  return args;
+}
+
 // Issue #2: HTTP transport wraps existing tool implementations
 // All tools are imported from src/tools/ and work with both STDIO and HTTP transports
 const handler = createMcpHandler(
@@ -30,7 +48,7 @@ const handler = createMcpHandler(
       getScheduleTool.definition.description || '',
       getScheduleTool.definition.inputSchema as any,
       async (args) => {
-        const result = await getScheduleTool.handler(args);
+        const result = await getScheduleTool.handler(resolveToolArgs(args));
         return result;
       }
     );
@@ -41,7 +59,7 @@ const handler = createMcpHandler(
       getTeamStatsTool.definition.description || '',
       getTeamStatsTool.definition.inputSchema as any,
       async (args) => {
-        const result = await getTeamStatsTool.handler(args);
+        const result = await getTeamStatsTool.handler(resolveToolArgs(args));
         return result;
       }
     );
@@ -52,7 +70,7 @@ const handler = createMcpHandler(
       getPlayerStatsTool.definition.description || '',
       getPlayerStatsTool.definition.inputSchema as any,
       async (args) => {
-        const result = await getPlayerStatsTool.handler(args);
+        const result = await getPlayerStatsTool.handler(resolveToolArgs(args));
         return result;
       }
     );
@@ -63,7 +81,7 @@ const handler = createMcpHandler(
       getScheduleCSVTool.definition.description || '',
       getScheduleCSVTool.definition.inputSchema as any,
       async (args) => {
-        const result = await getScheduleCSVTool.handler(args);
+        const result = await getScheduleCSVTool.handler(resolveToolArgs(args));
         return result;
       }
     );
@@ -74,7 +92,9 @@ const handler = createMcpHandler(
       listScheduleOptionsTool.definition.description || '',
       listScheduleOptionsTool.definition.inputSchema as any,
       async (args) => {
-        const result = await listScheduleOptionsTool.handler(args);
+        const result = await listScheduleOptionsTool.handler(
+          resolveToolArgs(args)
+        );
         return result;
       }
     );
