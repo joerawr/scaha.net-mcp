@@ -14,17 +14,32 @@
  */
 
 import { createMcpHandler } from 'mcp-handler';
-import { getScheduleTool } from '../../../src/tools/get_schedule.js';
-import { getTeamStatsTool } from '../../../src/tools/get_team_stats.js';
-import { getPlayerStatsTool } from '../../../src/tools/get_player_stats.js';
-import { getScheduleCSVTool } from '../../../src/tools/get_schedule_csv.js';
-import { listScheduleOptionsTool } from '../../../src/tools/list_schedule_options.js';
+import {
+  getScheduleTool,
+  GetScheduleArgsSchema,
+} from '../../../src/tools/get_schedule.js';
+import {
+  getTeamStatsTool,
+  GetTeamStatsArgsSchema,
+} from '../../../src/tools/get_team_stats.js';
+import {
+  getPlayerStatsTool,
+  GetPlayerStatsArgsSchema,
+} from '../../../src/tools/get_player_stats.js';
+import {
+  getScheduleCSVTool,
+  GetScheduleCSVArgsSchema,
+} from '../../../src/tools/get_schedule_csv.js';
+import {
+  listScheduleOptionsTool,
+  ListScheduleOptionsArgsSchema,
+} from '../../../src/tools/list_schedule_options.js';
 
 /**
  * Some transports (including Streamable HTTP) wrap tool arguments under an
  * `arguments` key. Normalise so the existing tool handlers keep working.
  */
-function resolveToolArgs(args: unknown, toolName: string) {
+function resolveToolArgs(args: unknown): unknown {
   if (
     args &&
     typeof args === 'object' &&
@@ -32,18 +47,37 @@ function resolveToolArgs(args: unknown, toolName: string) {
     typeof (args as Record<string, unknown>).arguments === 'object' &&
     (args as Record<string, unknown>).arguments !== null
   ) {
-    const normalized = (args as { arguments: unknown }).arguments;
-    console.log(
-      `[scaha-mcp] Normalized arguments for ${toolName}:`,
-      JSON.stringify(normalized)
-    );
-    return normalized;
+    return (args as { arguments: unknown }).arguments;
   }
 
-  console.log(
-    `[scaha-mcp] Using raw arguments for ${toolName}:`,
-    JSON.stringify(args)
-  );
+  if (
+    args &&
+    typeof args === 'object' &&
+    'requestInfo' in (args as Record<string, unknown>)
+  ) {
+    const requestInfo = (args as { requestInfo?: Record<string, unknown> })
+      .requestInfo;
+    const body = requestInfo?.body;
+
+    if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body);
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          'params' in parsed &&
+          typeof parsed.params === 'object' &&
+          parsed.params !== null &&
+          'arguments' in parsed.params
+        ) {
+          return parsed.params.arguments;
+        }
+      } catch (error) {
+        console.error('[scaha-mcp] Failed to parse request body:', error);
+      }
+    }
+  }
+
   return args;
 }
 
@@ -55,11 +89,9 @@ const handler = createMcpHandler(
     server.tool(
       getScheduleTool.definition.name,
       getScheduleTool.definition.description || '',
-      getScheduleTool.definition.inputSchema as any,
+      GetScheduleArgsSchema.shape,
       async (args) => {
-        const result = await getScheduleTool.handler(
-          resolveToolArgs(args, getScheduleTool.definition.name)
-        );
+        const result = await getScheduleTool.handler(resolveToolArgs(args));
         return result;
       }
     );
@@ -68,11 +100,9 @@ const handler = createMcpHandler(
     server.tool(
       getTeamStatsTool.definition.name,
       getTeamStatsTool.definition.description || '',
-      getTeamStatsTool.definition.inputSchema as any,
+      GetTeamStatsArgsSchema.shape,
       async (args) => {
-        const result = await getTeamStatsTool.handler(
-          resolveToolArgs(args, getTeamStatsTool.definition.name)
-        );
+        const result = await getTeamStatsTool.handler(resolveToolArgs(args));
         return result;
       }
     );
@@ -81,11 +111,9 @@ const handler = createMcpHandler(
     server.tool(
       getPlayerStatsTool.definition.name,
       getPlayerStatsTool.definition.description || '',
-      getPlayerStatsTool.definition.inputSchema as any,
+      GetPlayerStatsArgsSchema.shape,
       async (args) => {
-        const result = await getPlayerStatsTool.handler(
-          resolveToolArgs(args, getPlayerStatsTool.definition.name)
-        );
+        const result = await getPlayerStatsTool.handler(resolveToolArgs(args));
         return result;
       }
     );
@@ -94,11 +122,9 @@ const handler = createMcpHandler(
     server.tool(
       getScheduleCSVTool.definition.name,
       getScheduleCSVTool.definition.description || '',
-      getScheduleCSVTool.definition.inputSchema as any,
+      GetScheduleCSVArgsSchema.shape,
       async (args) => {
-        const result = await getScheduleCSVTool.handler(
-          resolveToolArgs(args, getScheduleCSVTool.definition.name)
-        );
+        const result = await getScheduleCSVTool.handler(resolveToolArgs(args));
         return result;
       }
     );
@@ -107,10 +133,10 @@ const handler = createMcpHandler(
     server.tool(
       listScheduleOptionsTool.definition.name,
       listScheduleOptionsTool.definition.description || '',
-      listScheduleOptionsTool.definition.inputSchema as any,
+      ListScheduleOptionsArgsSchema.shape,
       async (args) => {
         const result = await listScheduleOptionsTool.handler(
-          resolveToolArgs(args, listScheduleOptionsTool.definition.name)
+          resolveToolArgs(args)
         );
         return result;
       }

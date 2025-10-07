@@ -7,7 +7,7 @@
 import { z } from 'zod';
 import { getScoreboardOptionsWithBrowser } from '../lib/browser-scrapers.js';
 
-const ListScheduleOptionsArgsSchema = z.object({
+export const ListScheduleOptionsArgsSchema = z.object({
   season: z
     .string()
     .optional()

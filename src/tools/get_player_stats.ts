@@ -7,7 +7,7 @@
 import { z } from 'zod';
 import { getPlayerStats } from '../lib/scrapers.js';
 
-const GetPlayerStatsArgsSchema = z.object({
+export const GetPlayerStatsArgsSchema = z.object({
   season: z.string().describe('Season identifier (e.g., "2024-25")'),
   division: z.string().describe('Division name'),
   team_slug: z.string().describe('Team name or identifier'),

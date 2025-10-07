@@ -7,7 +7,7 @@
 import { z } from 'zod';
 import { downloadScheduleCSVWithBrowser } from '../lib/browser-scrapers.js';
 
-const GetScheduleArgsSchema = z.object({
+export const GetScheduleArgsSchema = z.object({
   season: z.string().describe('Season name (e.g., "2025/26")'),
   schedule: z.string().describe('Schedule name (e.g., "14U B")'),
   team: z.string().describe('Team name (e.g., "Jr. Kings (1)")'),
