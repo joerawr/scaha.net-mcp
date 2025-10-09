@@ -64,7 +64,7 @@ Get team standings and statistics.
 
 **Parameters:**
 - `season` (required): Season identifier
-- `division` (required): Division name
+- `division` (required): Division/schedule name (e.g., "14U B" selects "14U B Regular Season")
 - `team_slug` (required): Team identifier
 
 ### get_player_stats
@@ -75,6 +75,7 @@ Get individual player statistics.
 - `division` (required): Division name
 - `team_slug` (required): Team identifier
 - `player` (required): Object with `name` or `number`
+- `category` (optional): Use `"goalies"` to fetch goalie stats (defaults to skaters). Including the word “goalie” in `player.name` also switches to goalie stats automatically.
 
 ### get_schedule_csv
 Download schedule as CSV (base64 encoded).

@@ -23,6 +23,18 @@ export interface PlayerStats {
   pims: number; // penalty minutes
 }
 
+export interface GoalieStats {
+  number: string;
+  name: string;
+  team: string;
+  gp: number;      // games played
+  mins: number;    // minutes played
+  shots: number;   // shots against
+  saves: number;   // saves made
+  sv_pct: number | null;  // save percentage
+  gaa: number | null;     // goals against average
+}
+
 export interface Game {
   game_id: string;
   date: string;           // YYYY-MM-DD

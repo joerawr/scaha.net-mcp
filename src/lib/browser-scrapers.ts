@@ -1,6 +1,6 @@
 import puppeteer, { type Page } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
-import { SelectOption, ScoreboardOptionState } from './types.js';
+import { SelectOption, ScoreboardOptionState, TeamStats } from './types.js';
 
 const BASE_URL = 'https://www.scaha.net';
 const SCOREBOARD_URL = `${BASE_URL}/scaha/scoreboard.xhtml`;
@@ -39,6 +39,17 @@ async function extractSelectOptions(page: Page, selector: string): Promise<Selec
         selected: htmlOpt.selected,
       };
     })
+  );
+}
+
+function findOption(
+  options: SelectOption[],
+  query: string
+): SelectOption | undefined {
+  const normalizedQuery = query.toLowerCase().trim();
+  return (
+    options.find((opt) => opt.label.toLowerCase().trim() === normalizedQuery) ||
+    options.find((opt) => opt.label.toLowerCase().includes(normalizedQuery))
   );
 }
 
@@ -138,6 +149,135 @@ export async function getScoreboardOptionsWithBrowser(
       schedules,
       teams,
     };
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * Extract standings table for a given season/schedule (all teams)
+ */
+export async function getStandingsWithBrowser(
+  season: string,
+  schedule: string
+): Promise<TeamStats[]> {
+  const browserConfig = await getBrowserConfig();
+  const browser = await puppeteer.launch(browserConfig);
+
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 720 });
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36');
+
+    await page.goto(SCOREBOARD_URL, {
+      waitUntil: 'networkidle0',
+      timeout: 30000,
+    });
+
+    const normalizeSeasonQuery = (value: string) =>
+      value.replace(/-/g, '/').replace(/\s+/g, ' ').trim();
+
+    const normalizedSeason = normalizeSeasonQuery(season);
+    const seasonQueries = [
+      season,
+      normalizedSeason,
+      `SCAHA ${normalizedSeason}`,
+      `SCAHA ${normalizedSeason} Season`,
+    ].filter(Boolean) as string[];
+
+    let seasons = await extractSelectOptions(page, '#j_id_4c\\:j_id_4jInner option');
+    const seasonOption =
+      seasonQueries
+        .map((query) => findOption(seasons, query))
+        .find((opt): opt is SelectOption => Boolean(opt)) ??
+      seasons.find((opt) => opt.selected);
+
+    if (!seasonOption) {
+      throw new Error(`Season "${season}" not found on scoreboard page`);
+    }
+
+    if (!seasonOption.selected) {
+      await page.select('#j_id_4c\\:j_id_4jInner', seasonOption.value);
+      await page.waitForNetworkIdle({ timeout: 15000 });
+      seasons = await extractSelectOptions(page, '#j_id_4c\\:j_id_4jInner option');
+    }
+
+    const normalizeScheduleQuery = (value: string) =>
+      value.replace(/regular season/gi, '').trim();
+
+    const scheduleQueries = [
+      schedule,
+      `${schedule} Regular Season`,
+      `${schedule} Season`,
+      normalizeScheduleQuery(schedule),
+    ].filter(Boolean) as string[];
+
+    let schedules = await extractSelectOptions(page, '#j_id_4c\\:j_id_4mInner option');
+    const scheduleOption =
+      scheduleQueries
+        .map((query) => findOption(schedules, query))
+        .find((opt): opt is SelectOption => Boolean(opt)) ??
+      schedules.find((opt) => opt.selected);
+
+    if (!scheduleOption) {
+      throw new Error(`Schedule "${schedule}" not found for season "${season}"`);
+    }
+
+    if (!scheduleOption.selected) {
+      await page.select('#j_id_4c\\:j_id_4mInner', scheduleOption.value);
+      await page.waitForNetworkIdle({ timeout: 15000 });
+      schedules = await extractSelectOptions(page, '#j_id_4c\\:j_id_4mInner option');
+    }
+
+    const standingsSelector = '#j_id_4c\\:parts tbody tr';
+
+    await page.waitForFunction(
+      (selector: string) => {
+        const rows = document.querySelectorAll(selector);
+        return Array.from(rows).some((row) => row.querySelectorAll('td').length >= 10);
+      },
+      { timeout: 15000 },
+      standingsSelector
+    );
+
+    const standings = await page.$$eval(standingsSelector, (rows) => {
+      const results = [];
+
+      for (const row of rows) {
+        const cells = Array.from(row.querySelectorAll('td')).map((cell) =>
+          (cell.textContent || '').trim()
+        );
+
+        if (cells.length < 10 || !cells[1]) {
+          continue;
+        }
+
+        const gp = Number.parseInt(cells[2], 10);
+        const w = Number.parseInt(cells[3], 10);
+        const l = Number.parseInt(cells[4], 10);
+        const t = Number.parseInt(cells[5], 10);
+        const points = Number.parseInt(cells[6], 10);
+        const gf = Number.parseInt(cells[7], 10);
+        const ga = Number.parseInt(cells[8], 10);
+        const gd = Number.parseInt(cells[9], 10);
+
+        results.push({
+          team: cells[1],
+          gp: Number.isNaN(gp) ? 0 : gp,
+          w: Number.isNaN(w) ? 0 : w,
+          l: Number.isNaN(l) ? 0 : l,
+          t: Number.isNaN(t) ? 0 : t,
+          points: Number.isNaN(points) ? 0 : points,
+          gf: Number.isNaN(gf) ? 0 : gf,
+          ga: Number.isNaN(ga) ? 0 : ga,
+          gd: Number.isNaN(gd) ? 0 : gd,
+        });
+      }
+
+      return results;
+    });
+
+    return standings;
   } finally {
     await browser.close();
   }
