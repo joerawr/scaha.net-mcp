@@ -12,14 +12,15 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc && chmod +x dist/index.js",
-    "build:stdio": "tsc && chmod +x dist/index.js",
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
+    "build:stdio": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
     "build:http": "next build",
     "build:all": "npm run build:stdio && npm run build:http",
     "dev": "tsx src/index.ts",
     "dev:http": "next dev",
     "test": "tsx src/index.ts",
     "start": "next start",
+    "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build:stdio"
   },
   "repository": {

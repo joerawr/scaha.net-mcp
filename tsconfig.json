@@ -6,16 +6,12 @@
       "ES2022",
       "DOM"
     ],
-    "moduleResolution": "node",
-    "outDir": "./dist",
-    "rootDir": "./src",
+    "moduleResolution": "bundler",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "declaration": true,
-    "declarationMap": true,
     "allowJs": true,
     "noEmit": true,
     "incremental": true,
@@ -29,6 +25,7 @@
   },
   "include": [
     "src/**/*",
+    "app/**/*",
     ".next/types/**/*.ts"
   ],
   "exclude": [

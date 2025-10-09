@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Override noEmit for STDIO builds
+    "noEmit": false,
+    "outDir": "./dist",
+    "rootDir": "./src",
+
+    // Generate declaration files for npm package
+    "declaration": true,
+    "declarationMap": true,
+
+    // STDIO-specific settings (no Next.js)
+    "module": "esnext",
+    "moduleResolution": "node",
+    "jsx": "react"
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "app",
+    ".next"
+  ]
+}
