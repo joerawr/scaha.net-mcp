@@ -11,6 +11,12 @@ export const GetPlayerStatsArgsSchema = z.object({
   season: z.string().describe('Season identifier (e.g., "2024-25")'),
   division: z.string().describe('Division name'),
   team_slug: z.string().describe('Team name or identifier'),
+  category: z
+    .enum(['players', 'goalies'])
+    .optional()
+    .describe(
+      'Set to "goalies" to fetch goalie stats; defaults to player skaters'
+    ),
   player: z
     .object({
       name: z
@@ -41,6 +47,11 @@ export const getPlayerStatsTool = {
           type: 'string',
           description: 'Team name or identifier',
         },
+        category: {
+          type: 'string',
+          enum: ['players', 'goalies'],
+          description: 'Set to "goalies" to view goalie stats (default players)',
+        },
         player: {
           type: 'object',
           properties: {
@@ -62,7 +73,7 @@ export const getPlayerStatsTool = {
 
   handler: async (args: unknown) => {
     try {
-      const { season, division, team_slug, player } =
+      const { season, division, team_slug, category, player } =
         GetPlayerStatsArgsSchema.parse(args);
 
       if (!player.name && !player.number) {
@@ -76,15 +87,35 @@ export const getPlayerStatsTool = {
         };
       }
 
-      const stats = await getPlayerStats(season, division, team_slug, player);
+      let normalizedName = player.name;
+      let selectedCategory = category;
+
+      if (!selectedCategory && normalizedName) {
+        if (normalizedName.toLowerCase().includes('goalie')) {
+          selectedCategory = 'goalies';
+          normalizedName = normalizedName.replace(/goalie/gi, '').trim() || undefined;
+        }
+      }
+
+      const stats = await getPlayerStats(
+        season,
+        division,
+        team_slug,
+        { ...player, name: normalizedName },
+        selectedCategory ?? 'players'
+      );
 
       if (!stats) {
-        const identifier = player.number ? `#${player.number}` : player.name;
+        const identifier = player.number
+          ? `#${player.number}`
+          : normalizedName || player.name || 'unknown';
+        const categoryLabel =
+          (selectedCategory ?? 'players') === 'goalies' ? ' goalie' : '';
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Player "${identifier}" not found on ${team_slug}`,
+              text: `Player${categoryLabel} "${identifier}" not found on ${team_slug}`,
             },
           ],
         };

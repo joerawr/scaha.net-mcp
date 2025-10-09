@@ -2,11 +2,13 @@ import * as cheerio from 'cheerio';
 import {
   TeamStats,
   PlayerStats,
+  GoalieStats,
   Game,
   SelectOption,
   ScoreboardOptionState,
 } from './types.js';
 import { normalizeTeamName, teamNamesMatch, parseScore } from './utils.js';
+import { getStandingsWithBrowser } from './browser-scrapers.js';
 
 const BASE_URL = 'https://www.scaha.net';
 const SCOREBOARD_URL = `${BASE_URL}/scaha/scoreboard.xhtml`;
@@ -82,6 +84,13 @@ async function submitJSFForm(
 
   if (viewStateMatch && viewStateMatch[1]) {
     session.viewState = viewStateMatch[1];
+  } else {
+    const fullPageViewStateMatch = text.match(
+      /name="javax\.faces\.ViewState".*?value="([^"]+)"/s
+    );
+    if (fullPageViewStateMatch && fullPageViewStateMatch[1]) {
+      session.viewState = fullPageViewStateMatch[1];
+    }
   }
 
   return text;
@@ -233,35 +242,7 @@ export async function scrapeStandings(
   season: string,
   division: string
 ): Promise<TeamStats[]> {
-  const { html } = await initJSFSession(SCOREBOARD_URL);
-  const $ = cheerio.load(html);
-
-  const standings: TeamStats[] = [];
-
-  // Parse standings table (need to find actual table class/id from page)
-  // Looking for table with columns: Team, GP, W, L, T, Points, GF, GA, GD
-  $('table tbody tr').each((_, row) => {
-    const cells = $(row).find('td');
-    if (cells.length >= 9) {
-      const teamText = $(cells[0]).text().trim();
-      // Skip header rows or empty rows
-      if (teamText && teamText !== 'Team' && !teamText.includes('Select')) {
-        standings.push({
-          team: teamText,
-          gp: parseInt($(cells[1]).text().trim(), 10) || 0,
-          w: parseInt($(cells[2]).text().trim(), 10) || 0,
-          l: parseInt($(cells[3]).text().trim(), 10) || 0,
-          t: parseInt($(cells[4]).text().trim(), 10) || 0,
-          points: parseInt($(cells[5]).text().trim(), 10) || 0,
-          gf: parseInt($(cells[6]).text().trim(), 10) || 0,
-          ga: parseInt($(cells[7]).text().trim(), 10) || 0,
-          gd: parseInt($(cells[8]).text().trim(), 10) || 0,
-        });
-      }
-    }
-  });
-
-  return standings;
+  return getStandingsWithBrowser(season, division);
 }
 
 /**
@@ -283,38 +264,151 @@ export async function getTeamStats(
 export async function scrapePlayerStats(
   season: string,
   division: string,
-  teamSlug: string
-): Promise<PlayerStats[]> {
-  const { html } = await initJSFSession(STATS_CENTRAL_URL);
-  const $ = cheerio.load(html);
+  teamSlug: string,
+  category: 'players' | 'goalies' = 'players'
+): Promise<(PlayerStats | GoalieStats)[]> {
+  const { session, html } = await initJSFSession(STATS_CENTRAL_URL);
+
+  const parseState = (markup: string) => {
+    const doc = cheerio.load(markup);
+    return {
+      seasons: parseSelectOptionsFromDoc(doc, 'j_id_4c:j_id_4jInner'),
+      schedules: parseSelectOptionsFromDoc(doc, 'j_id_4c:schedulelistInner'),
+    };
+  };
+
+  const resolveOption = (options: SelectOption[], queries: string[]): SelectOption | undefined => {
+    for (const query of queries) {
+      if (!query) continue;
+      const match = findOptionByLabel(options, query);
+      if (match) return match;
+    }
+    return undefined;
+  };
+
+  const normalizeSeasonQuery = (value: string) =>
+    value.replace(/-/g, '/').replace(/\s+/g, ' ').trim();
+
+  let currentMarkup = html;
+  let { seasons, schedules } = parseState(currentMarkup);
+
+  // Ensure the desired season is selected
+  const seasonQueries = [
+    normalizeSeasonQuery(season),
+    `SCAHA ${normalizeSeasonQuery(season)}`,
+    `SCAHA ${normalizeSeasonQuery(season)} Season`,
+  ];
+  const seasonOption = resolveOption(seasons, seasonQueries);
+  if (!seasonOption) {
+    throw new Error(`Season "${season}" not found on stats page.`);
+  }
+
+  if (!seasonOption.selected) {
+    const response = await submitJSFForm(STATS_CENTRAL_URL, session, {
+      'j_id_4c:j_id_4jInner': seasonOption.value,
+      'j_id_4c:schedulelistInner': '0',
+      'j_id_4c_SUBMIT': '1',
+    });
+    currentMarkup = response;
+    ({ seasons, schedules } = parseState(currentMarkup));
+  }
+
+  // Ensure the correct schedule/division is loaded
+  const scheduleQueries = [
+    division,
+    `${division} Regular Season`,
+    `${division} Season`,
+  ];
+  const scheduleOption = resolveOption(schedules, scheduleQueries);
+  if (!scheduleOption) {
+    throw new Error(`Division "${division}" not found for season "${season}".`);
+  }
+
+  if (!scheduleOption.selected) {
+    const selectedSeasonValue =
+      seasons.find((opt) => opt.selected)?.value ?? seasonOption.value;
+    const response = await submitJSFForm(STATS_CENTRAL_URL, session, {
+      'j_id_4c:j_id_4jInner': selectedSeasonValue,
+      'j_id_4c:schedulelistInner': scheduleOption.value,
+      'j_id_4c_SUBMIT': '1',
+    });
+    currentMarkup = response;
+    ({ seasons, schedules } = parseState(currentMarkup));
+  }
+
+  // Trigger the Players button to load stats table
+  const selectedSeasonValue =
+    seasons.find((opt) => opt.selected)?.value ?? seasonOption.value;
+  const selectedScheduleValue =
+    schedules.find((opt) => opt.selected)?.value ?? scheduleOption.value;
+
+  const buttonParam =
+    category === 'goalies' ? 'j_id_4c:j_id_4w' : 'j_id_4c:j_id_4v';
+
+  const statsResponse = await submitJSFForm(STATS_CENTRAL_URL, session, {
+    'j_id_4c:j_id_4jInner': selectedSeasonValue,
+    'j_id_4c:schedulelistInner': selectedScheduleValue,
+    [buttonParam]: buttonParam,
+    'j_id_4c_SUBMIT': '1',
+  });
+
+  const statsDoc = cheerio.load(statsResponse);
+
+  if (category === 'goalies') {
+    const goalies: GoalieStats[] = [];
+    statsDoc('#j_id_4c\\:goalietotals tbody tr').each((_, row) => {
+      const cells = statsDoc(row).find('td');
+      if (cells.length < 9) return;
+
+      const number = statsDoc(cells[0]).text().trim();
+      const name = statsDoc(cells[1]).text().trim();
+      const team = statsDoc(cells[2]).text().trim();
+      if (!number || !name || name === 'Name') return;
+
+      if (!teamSlug || teamNamesMatch(team, teamSlug)) {
+        const parseFloatOrNull = (value: string) => {
+          const parsed = parseFloat(value);
+          return Number.isFinite(parsed) ? parsed : null;
+        };
+        goalies.push({
+          number,
+          name,
+          team,
+          gp: parseInt(statsDoc(cells[3]).text().trim(), 10) || 0,
+          mins: parseInt(statsDoc(cells[4]).text().trim(), 10) || 0,
+          shots: parseInt(statsDoc(cells[5]).text().trim(), 10) || 0,
+          saves: parseInt(statsDoc(cells[6]).text().trim(), 10) || 0,
+          sv_pct: parseFloatOrNull(statsDoc(cells[7]).text().trim()),
+          gaa: parseFloatOrNull(statsDoc(cells[8]).text().trim()),
+        });
+      }
+    });
+    return goalies;
+  }
 
   const players: PlayerStats[] = [];
 
-  // Parse player stats table
-  // Columns: #, Name, Team, GP, G, A, Pts, PIMS
-  $('table tbody tr').each((_, row) => {
-    const cells = $(row).find('td');
-    if (cells.length >= 8) {
-      const number = $(cells[0]).text().trim();
-      const name = $(cells[1]).text().trim();
-      const team = $(cells[2]).text().trim();
+  statsDoc('#j_id_4c\\:playertotals tbody tr').each((_, row) => {
+    const cells = statsDoc(row).find('td');
+    if (cells.length < 8) return;
 
-      // Skip header rows
-      if (number && name && name !== 'Name') {
-        // Filter by team if specified
-        if (!teamSlug || teamNamesMatch(team, teamSlug)) {
-          players.push({
-            number,
-            name,
-            team,
-            gp: parseInt($(cells[3]).text().trim(), 10) || 0,
-            g: parseInt($(cells[4]).text().trim(), 10) || 0,
-            a: parseInt($(cells[5]).text().trim(), 10) || 0,
-            pts: parseInt($(cells[6]).text().trim(), 10) || 0,
-            pims: parseInt($(cells[7]).text().trim(), 10) || 0,
-          });
-        }
-      }
+    const number = statsDoc(cells[0]).text().trim();
+    const name = statsDoc(cells[1]).text().trim();
+    const team = statsDoc(cells[2]).text().trim();
+
+    if (!number || !name || name === 'Name') return;
+
+    if (!teamSlug || teamNamesMatch(team, teamSlug)) {
+      players.push({
+        number,
+        name,
+        team,
+        gp: parseInt(statsDoc(cells[3]).text().trim(), 10) || 0,
+        g: parseInt(statsDoc(cells[4]).text().trim(), 10) || 0,
+        a: parseInt(statsDoc(cells[5]).text().trim(), 10) || 0,
+        pts: parseInt(statsDoc(cells[6]).text().trim(), 10) || 0,
+        pims: parseInt(statsDoc(cells[7]).text().trim(), 10) || 0,
+      });
     }
   });
 
@@ -328,18 +422,26 @@ export async function getPlayerStats(
   season: string,
   division: string,
   teamSlug: string,
-  playerFilter: { name?: string; number?: string }
-): Promise<PlayerStats | null> {
-  const players = await scrapePlayerStats(season, division, teamSlug);
+  playerFilter: { name?: string; number?: string },
+  category: 'players' | 'goalies' = 'players'
+): Promise<PlayerStats | GoalieStats | null> {
+  const stats = await scrapePlayerStats(season, division, teamSlug, category);
 
   if (playerFilter.number) {
-    return players.find((p) => p.number === playerFilter.number) || null;
+    return stats.find((p) => p.number === playerFilter.number) || null;
   }
 
   if (playerFilter.name) {
     const normalizedSearch = normalizeTeamName(playerFilter.name);
+    if (!normalizedSearch) {
+      return null;
+    }
     return (
-      players.find((p) => normalizeTeamName(p.name) === normalizedSearch) || null
+      stats.find((p) => normalizeTeamName(p.name) === normalizedSearch) ||
+      stats.find((p) =>
+        normalizeTeamName(p.name).includes(normalizedSearch)
+      ) ||
+      null
     );
   }
 

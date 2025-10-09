@@ -536,10 +536,14 @@ Gets team standings and statistics.
 
 **Parameters:**
 - `season`: e.g., "2024-25"
-- `division`: Division name
+- `division`: Division/schedule name (e.g., "14U B" → selects "14U B Regular Season")
 - `team_slug`: Team identifier
 
-**Returns:** GP, W, L, T, Points, GF, GA, GD
+**Returns:** GP, W, L, T, Points, GF, GA, GD (sourced from the standings table above the schedule view)
+
+**Implementation notes:**
+- The standings are loaded from the same scoreboard view used by `get_schedule`, so the dropdown labels must match exactly. Use `list_schedule_options` first to confirm the precise `division` and `team_slug` strings (`"Jr. Kings (1)"`, `"OC Hockey (1)"`, etc.).
+- Standings rely on browser automation (Puppeteer). If you see a timeout, it usually means the requested option does not exist for that season—double-check the labels returned by `list_schedule_options`.
 
 ### 5. get_player_stats
 Gets individual player statistics.
@@ -549,8 +553,9 @@ Gets individual player statistics.
 - `division`: Division name
 - `team_slug`: Team identifier
 - `player`: { name or number }
+- `category` (optional): `"goalies"` for goalie stats (defaults to player skaters). Including “goalie” in the player name also switches to goalie stats automatically.
 
-**Returns:** Number, Name, GP, G, A, PTS, PIMs
+**Returns:** For skaters – Number, Name, GP, G, A, PTS, PIMs. For goalies – Number, Name, GP, Minutes, Shots, Saves, SV%, GAA.
 
 ## Important Notes
 
