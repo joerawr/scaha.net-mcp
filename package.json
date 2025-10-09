@@ -14,12 +14,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
     "build:stdio": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
-    "build:http": "next build",
+    "build:http": "cd http && next build && cd ..",
     "build:all": "npm run build:stdio && npm run build:http",
     "dev": "tsx src/index.ts",
-    "dev:http": "next dev",
+    "dev:http": "cd http && next dev",
     "test": "tsx src/index.ts",
-    "start": "next start",
+    "start": "cd http && next start",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build:stdio"
   },

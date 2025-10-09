@@ -6,13 +6,12 @@ node_modules/
 # testing
 /coverage
 
-# next.js
-.next/
-/out/
-
-# production
+# build outputs
 dist/
 build/
+.next/
+http/.next/
+/out/
 
 # misc
 .DS_Store
@@ -37,9 +36,3 @@ next-env.d.ts
 
 # claude
 .claude/
-
-# Next.js
-/.next/
-/out/
-next-env.d.ts
-.vercel

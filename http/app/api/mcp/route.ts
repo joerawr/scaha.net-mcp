@@ -17,23 +17,23 @@ import { createMcpHandler } from 'mcp-handler';
 import {
   getScheduleTool,
   GetScheduleArgsSchema,
-} from '../../../src/tools/get_schedule.js';
+} from '../../../../src/tools/get_schedule.js';
 import {
   getTeamStatsTool,
   GetTeamStatsArgsSchema,
-} from '../../../src/tools/get_team_stats.js';
+} from '../../../../src/tools/get_team_stats.js';
 import {
   getPlayerStatsTool,
   GetPlayerStatsArgsSchema,
-} from '../../../src/tools/get_player_stats.js';
+} from '../../../../src/tools/get_player_stats.js';
 import {
   getScheduleCSVTool,
   GetScheduleCSVArgsSchema,
-} from '../../../src/tools/get_schedule_csv.js';
+} from '../../../../src/tools/get_schedule_csv.js';
 import {
   listScheduleOptionsTool,
   ListScheduleOptionsArgsSchema,
-} from '../../../src/tools/list_schedule_options.js';
+} from '../../../../src/tools/list_schedule_options.js';
 
 /**
  * Some transports (including Streamable HTTP) wrap tool arguments under an

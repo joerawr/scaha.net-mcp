@@ -1,4 +1,6 @@
 {
   "buildCommand": "npm run build:http",
+  "outputDirectory": "http/.next",
+  "installCommand": "npm install",
   "framework": "nextjs"
 }
