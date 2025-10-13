@@ -264,7 +264,7 @@ export async function getTeamStats(
 export async function scrapePlayerStats(
   season: string,
   division: string,
-  teamSlug: string,
+  teamSlug?: string,
   category: 'players' | 'goalies' = 'players'
 ): Promise<(PlayerStats | GoalieStats)[]> {
   const { session, html } = await initJSFSession(STATS_CENTRAL_URL);
@@ -421,7 +421,7 @@ export async function scrapePlayerStats(
 export async function getPlayerStats(
   season: string,
   division: string,
-  teamSlug: string,
+  teamSlug: string | undefined,
   playerFilter: { name?: string; number?: string },
   category: 'players' | 'goalies' = 'players'
 ): Promise<PlayerStats | GoalieStats | null> {

@@ -10,7 +10,7 @@ import { getPlayerStats } from '../lib/scrapers.js';
 export const GetPlayerStatsArgsSchema = z.object({
   season: z.string().describe('Season identifier (e.g., "2024-25")'),
   division: z.string().describe('Division name'),
-  team_slug: z.string().describe('Team name or identifier'),
+  team_slug: z.string().optional().describe('Team name or identifier (optional - stats are division-wide on SCAHA)'),
   category: z
     .enum(['players', 'goalies'])
     .optional()
@@ -45,7 +45,7 @@ export const getPlayerStatsTool = {
         },
         team_slug: {
           type: 'string',
-          description: 'Team name or identifier',
+          description: 'Team name or identifier (optional - stats are division-wide on SCAHA)',
         },
         category: {
           type: 'string',
@@ -67,7 +67,7 @@ export const getPlayerStatsTool = {
           description: 'Player identifier - provide either name or number',
         },
       },
-      required: ['season', 'division', 'team_slug', 'player'],
+      required: ['season', 'division', 'player'],
     },
   },
 
@@ -100,7 +100,7 @@ export const getPlayerStatsTool = {
       const stats = await getPlayerStats(
         season,
         division,
-        team_slug,
+        team_slug ?? undefined,
         { ...player, name: normalizedName },
         selectedCategory ?? 'players'
       );
@@ -111,11 +111,14 @@ export const getPlayerStatsTool = {
           : normalizedName || player.name || 'unknown';
         const categoryLabel =
           (selectedCategory ?? 'players') === 'goalies' ? ' goalie' : '';
+        const locationMsg = team_slug
+          ? ` on ${team_slug}`
+          : ` in ${division}`;
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Player${categoryLabel} "${identifier}" not found on ${team_slug}`,
+              text: `Player${categoryLabel} "${identifier}" not found${locationMsg}`,
             },
           ],
         };
