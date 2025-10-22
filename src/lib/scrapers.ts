@@ -304,13 +304,17 @@ export async function scrapePlayerStats(
   }
 
   if (!seasonOption.selected) {
-    const response = await submitJSFForm(STATS_CENTRAL_URL, session, {
-      'j_id_4d:j_id_4kInner': seasonOption.value,
-      'j_id_4d:schedulelistInner': '0',
-      'j_id_4d_SUBMIT': '1',
-    });
-    currentMarkup = response;
-    ({ seasons, schedules } = parseState(currentMarkup));
+    // WORKAROUND: SCAHA website has a caching bug when changing seasons via AJAX.
+    // Historical season data gets cached from the default season, returning incorrect results.
+    // This was verified by testing: changing to 2024/25 via AJAX still returns 2025/26 data.
+    // A full page refresh (Puppeteer) is required for historical seasons.
+    // See: https://github.com/joerawr/scaha.net-mcp/issues/9
+    throw new Error(
+      `Historical season data retrieval is currently unavailable due to a SCAHA website limitation. ` +
+      `Only the current season (${seasons.find(s => s.selected)?.label || 'default'}) is supported. ` +
+      `For historical data, please visit https://www.scaha.net/scaha/statscentral.xhtml directly. ` +
+      `Issue: https://github.com/joerawr/scaha.net-mcp/issues/9`
+    );
   }
 
   // Ensure the correct schedule/division is loaded
