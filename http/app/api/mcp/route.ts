@@ -27,6 +27,10 @@ import {
   GetPlayerStatsArgsSchema,
 } from '../../../../src/tools/get_player_stats.js';
 import {
+  getDivisionPlayerStatsTool,
+  GetDivisionPlayerStatsArgsSchema,
+} from '../../../../src/tools/get_division_player_stats.js';
+import {
   getScheduleCSVTool,
   GetScheduleCSVArgsSchema,
 } from '../../../../src/tools/get_schedule_csv.js';
@@ -114,6 +118,17 @@ const handler = createMcpHandler(
       GetPlayerStatsArgsSchema.shape,
       async (args) => {
         const result = await getPlayerStatsTool.handler(resolveToolArgs(args));
+        return result;
+      }
+    );
+
+    // Register get_division_player_stats tool
+    server.tool(
+      getDivisionPlayerStatsTool.definition.name,
+      getDivisionPlayerStatsTool.definition.description || '',
+      GetDivisionPlayerStatsArgsSchema.shape,
+      async (args) => {
+        const result = await getDivisionPlayerStatsTool.handler(resolveToolArgs(args));
         return result;
       }
     );

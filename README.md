@@ -75,7 +75,24 @@ Get individual player statistics.
 - `division` (required): Division name
 - `team_slug` (required): Team identifier
 - `player` (required): Object with `name` or `number`
-- `category` (optional): Use `"goalies"` to fetch goalie stats (defaults to skaters). Including the word “goalie” in `player.name` also switches to goalie stats automatically.
+- `category` (optional): Use `"goalies"` to fetch goalie stats (defaults to skaters). Including the word "goalie" in `player.name` also switches to goalie stats automatically.
+
+### get_division_player_stats
+Get complete player statistics rankings for a division. Returns all players sorted by points, optionally filtered by team.
+
+**Parameters:**
+- `season` (required): Season identifier (e.g., "2024-25")
+- `division` (required): Division name (e.g., "14U B")
+- `team_slug` (optional): Filter to specific team (e.g., "Jr. Kings")
+- `category` (optional): Use `"goalies"` for goalie stats (defaults to skaters)
+- `limit` (optional): Limit number of results returned
+
+**Use cases:**
+- "Who has the most goals in the division?"
+- "Who leads our team in scoring?"
+- "Show me the top 10 scorers in 14U A"
+
+**Returns:** Ranked list of all players with complete stats, metadata about total count, and whether more results exist (when using `limit`).
 
 ### get_schedule_csv
 Download schedule as CSV (base64 encoded).

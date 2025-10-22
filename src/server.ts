@@ -13,6 +13,7 @@ import {
 import { getScheduleTool } from './tools/get_schedule.js';
 import { getTeamStatsTool } from './tools/get_team_stats.js';
 import { getPlayerStatsTool } from './tools/get_player_stats.js';
+import { getDivisionPlayerStatsTool } from './tools/get_division_player_stats.js';
 import { getScheduleCSVTool } from './tools/get_schedule_csv.js';
 import { listScheduleOptionsTool } from './tools/list_schedule_options.js';
 
@@ -27,6 +28,7 @@ export function registerTools(server: Server) {
         getScheduleTool.definition,
         getTeamStatsTool.definition,
         getPlayerStatsTool.definition,
+        getDivisionPlayerStatsTool.definition,
         getScheduleCSVTool.definition,
         listScheduleOptionsTool.definition,
       ],
@@ -45,6 +47,8 @@ export function registerTools(server: Server) {
           return await getTeamStatsTool.handler(args);
         case 'get_player_stats':
           return await getPlayerStatsTool.handler(args);
+        case 'get_division_player_stats':
+          return await getDivisionPlayerStatsTool.handler(args);
         case 'get_schedule_csv':
           return await getScheduleCSVTool.handler(args);
         case 'list_schedule_options':
