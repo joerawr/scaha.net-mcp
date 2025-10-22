@@ -206,8 +206,8 @@ export async function getStandingsWithBrowser(
       value.replace(/regular season/gi, '').trim();
 
     const scheduleQueries = [
-      schedule,
-      `${schedule} Regular Season`,
+      `${schedule} Regular Season`,  // Try "14U B Regular Season" first
+      schedule,                        // Then try "14U B"
       `${schedule} Season`,
       normalizeScheduleQuery(schedule),
     ].filter(Boolean) as string[];
