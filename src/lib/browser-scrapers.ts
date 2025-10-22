@@ -78,7 +78,7 @@ export async function getScoreboardOptionsWithBrowser(
     });
 
     // Extract initial seasons
-    let seasons = await extractSelectOptions(page, '#j_id_4c\\:j_id_4jInner option');
+    let seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
 
     // Select season if requested
     if (seasonQuery) {
@@ -91,16 +91,16 @@ export async function getScoreboardOptionsWithBrowser(
       }
 
       if (!targetSeason.selected) {
-        await page.select('#j_id_4c\\:j_id_4jInner', targetSeason.value);
+        await page.select('#j_id_4d\\:j_id_4kInner', targetSeason.value);
         await page.waitForNetworkIdle({ timeout: 10000 });
 
         // Re-extract seasons to get updated state
-        seasons = await extractSelectOptions(page, '#j_id_4c\\:j_id_4jInner option');
+        seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
       }
     }
 
     // Extract schedules (now populated based on season)
-    let schedules = await extractSelectOptions(page, '#j_id_4c\\:j_id_4mInner option');
+    let schedules = await extractSelectOptions(page, '#j_id_4d\\:j_id_4nInner option');
 
     // Select schedule if requested
     if (scheduleQuery) {
@@ -113,17 +113,17 @@ export async function getScoreboardOptionsWithBrowser(
       }
 
       if (!targetSchedule.selected) {
-        await page.select('#j_id_4c\\:j_id_4mInner', targetSchedule.value);
+        await page.select('#j_id_4d\\:j_id_4nInner', targetSchedule.value);
         // Wait for the AJAX call to populate teams - this is the key!
         await page.waitForNetworkIdle({ timeout: 10000 });
 
         // Re-extract schedules to get updated state
-        schedules = await extractSelectOptions(page, '#j_id_4c\\:j_id_4mInner option');
+        schedules = await extractSelectOptions(page, '#j_id_4d\\:j_id_4nInner option');
       }
     }
 
     // Extract teams (NOW populated by JavaScript!)
-    let teams = await extractSelectOptions(page, '#j_id_4c\\:j_id_4pInner option');
+    let teams = await extractSelectOptions(page, '#j_id_4d\\:j_id_4qInner option');
 
     // Select team if requested
     if (teamQuery) {
@@ -136,11 +136,11 @@ export async function getScoreboardOptionsWithBrowser(
       }
 
       if (!targetTeam.selected) {
-        await page.select('#j_id_4c\\:j_id_4pInner', targetTeam.value);
+        await page.select('#j_id_4d\\:j_id_4qInner', targetTeam.value);
         await page.waitForNetworkIdle({ timeout: 10000 });
 
         // Re-extract teams to get updated state
-        teams = await extractSelectOptions(page, '#j_id_4c\\:j_id_4pInner option');
+        teams = await extractSelectOptions(page, '#j_id_4d\\:j_id_4qInner option');
       }
     }
 
@@ -185,7 +185,7 @@ export async function getStandingsWithBrowser(
       `SCAHA ${normalizedSeason} Season`,
     ].filter(Boolean) as string[];
 
-    let seasons = await extractSelectOptions(page, '#j_id_4c\\:j_id_4jInner option');
+    let seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
     const seasonOption =
       seasonQueries
         .map((query) => findOption(seasons, query))
@@ -197,9 +197,9 @@ export async function getStandingsWithBrowser(
     }
 
     if (!seasonOption.selected) {
-      await page.select('#j_id_4c\\:j_id_4jInner', seasonOption.value);
+      await page.select('#j_id_4d\\:j_id_4kInner', seasonOption.value);
       await page.waitForNetworkIdle({ timeout: 15000 });
-      seasons = await extractSelectOptions(page, '#j_id_4c\\:j_id_4jInner option');
+      seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
     }
 
     const normalizeScheduleQuery = (value: string) =>
@@ -212,7 +212,7 @@ export async function getStandingsWithBrowser(
       normalizeScheduleQuery(schedule),
     ].filter(Boolean) as string[];
 
-    let schedules = await extractSelectOptions(page, '#j_id_4c\\:j_id_4mInner option');
+    let schedules = await extractSelectOptions(page, '#j_id_4d\\:j_id_4nInner option');
     const scheduleOption =
       scheduleQueries
         .map((query) => findOption(schedules, query))
@@ -224,12 +224,12 @@ export async function getStandingsWithBrowser(
     }
 
     if (!scheduleOption.selected) {
-      await page.select('#j_id_4c\\:j_id_4mInner', scheduleOption.value);
+      await page.select('#j_id_4d\\:j_id_4nInner', scheduleOption.value);
       await page.waitForNetworkIdle({ timeout: 15000 });
-      schedules = await extractSelectOptions(page, '#j_id_4c\\:j_id_4mInner option');
+      schedules = await extractSelectOptions(page, '#j_id_4d\\:j_id_4nInner option');
     }
 
-    const standingsSelector = '#j_id_4c\\:parts tbody tr';
+    const standingsSelector = '#j_id_4d\\:parts tbody tr';
 
     await page.waitForFunction(
       (selector: string) => {
@@ -306,27 +306,27 @@ export async function downloadScheduleCSVWithBrowser(
     });
 
     // Select season
-    const seasons = await extractSelectOptions(page, '#j_id_4c\\:j_id_4jInner option');
+    const seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
     const targetSeason = seasons.find(s => s.label.toLowerCase().includes(season.toLowerCase()));
     if (!targetSeason) throw new Error(`Season "${season}" not found`);
 
-    await page.select('#j_id_4c\\:j_id_4jInner', targetSeason.value);
+    await page.select('#j_id_4d\\:j_id_4kInner', targetSeason.value);
     await page.waitForNetworkIdle({ timeout: 10000 });
 
     // Select schedule
-    const schedules = await extractSelectOptions(page, '#j_id_4c\\:j_id_4mInner option');
+    const schedules = await extractSelectOptions(page, '#j_id_4d\\:j_id_4nInner option');
     const targetSchedule = schedules.find(s => s.label.toLowerCase().includes(schedule.toLowerCase()));
     if (!targetSchedule) throw new Error(`Schedule "${schedule}" not found`);
 
-    await page.select('#j_id_4c\\:j_id_4mInner', targetSchedule.value);
+    await page.select('#j_id_4d\\:j_id_4nInner', targetSchedule.value);
     await page.waitForNetworkIdle({ timeout: 10000 });
 
     // Select team
-    const teams = await extractSelectOptions(page, '#j_id_4c\\:j_id_4pInner option');
+    const teams = await extractSelectOptions(page, '#j_id_4d\\:j_id_4qInner option');
     const targetTeam = teams.find(t => t.label.toLowerCase().includes(team.toLowerCase()));
     if (!targetTeam) throw new Error(`Team "${team}" not found`);
 
-    await page.select('#j_id_4c\\:j_id_4pInner', targetTeam.value);
+    await page.select('#j_id_4d\\:j_id_4qInner', targetTeam.value);
     await page.waitForNetworkIdle({ timeout: 10000 });
 
     // After selecting the team, the schedule table should be visible
