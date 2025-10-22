@@ -315,8 +315,8 @@ export async function scrapePlayerStats(
 
   // Ensure the correct schedule/division is loaded
   const scheduleQueries = [
-    division,
-    `${division} Regular Season`,
+    `${division} Regular Season`,  // Try "14U A Regular Season" first
+    division,                        // Then try "14U A"
     `${division} Season`,
   ];
   const scheduleOption = resolveOption(schedules, scheduleQueries);
