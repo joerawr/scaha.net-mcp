@@ -67,6 +67,20 @@ Get team standings and statistics.
 - `division` (required): Division/schedule name (e.g., "14U B" selects "14U B Regular Season")
 - `team_slug` (required): Team identifier
 
+### get_division_standings
+Get complete standings for all teams in a division.
+
+**Parameters:**
+- `season` (required): Season identifier (e.g., "2025-26")
+- `division` (required): Division name (e.g., "14U B")
+
+**Use cases:**
+- "What are the teams standings in 14U B?"
+- "Who is in first place in the division?"
+- "Show me the complete 16U A standings"
+
+**Returns:** Complete standings table with all teams showing W-L-T-OTL records, points, goals for/against, and goal differential.
+
 ### get_player_stats
 Get individual player statistics.
 
