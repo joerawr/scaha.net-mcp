@@ -23,6 +23,10 @@ import {
   GetTeamStatsArgsSchema,
 } from '../../../../src/tools/get_team_stats.js';
 import {
+  getDivisionStandingsTool,
+  GetDivisionStandingsArgsSchema,
+} from '../../../../src/tools/get_division_standings.js';
+import {
   getPlayerStatsTool,
   GetPlayerStatsArgsSchema,
 } from '../../../../src/tools/get_player_stats.js';
@@ -107,6 +111,17 @@ const handler = createMcpHandler(
       GetTeamStatsArgsSchema.shape,
       async (args) => {
         const result = await getTeamStatsTool.handler(resolveToolArgs(args));
+        return result;
+      }
+    );
+
+    // Register get_division_standings tool
+    server.tool(
+      getDivisionStandingsTool.definition.name,
+      getDivisionStandingsTool.definition.description || '',
+      GetDivisionStandingsArgsSchema.shape,
+      async (args) => {
+        const result = await getDivisionStandingsTool.handler(resolveToolArgs(args));
         return result;
       }
     );
