@@ -42,6 +42,10 @@ import {
   listScheduleOptionsTool,
   ListScheduleOptionsArgsSchema,
 } from '../../../../src/tools/list_schedule_options.js';
+import {
+  getTeamRosterTool,
+  GetTeamRosterArgsSchema,
+} from '../../../../src/tools/get_team_roster.js';
 
 /**
  * Some transports (including Streamable HTTP) wrap tool arguments under an
@@ -168,6 +172,17 @@ const handler = createMcpHandler(
         const result = await listScheduleOptionsTool.handler(
           resolveToolArgs(args)
         );
+        return result;
+      }
+    );
+
+    // Register get_team_roster tool
+    server.tool(
+      getTeamRosterTool.definition.name,
+      getTeamRosterTool.definition.description || '',
+      GetTeamRosterArgsSchema.shape,
+      async (args) => {
+        const result = await getTeamRosterTool.handler(resolveToolArgs(args));
         return result;
       }
     );

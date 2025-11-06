@@ -17,6 +17,7 @@ import { getPlayerStatsTool } from './tools/get_player_stats.js';
 import { getDivisionPlayerStatsTool } from './tools/get_division_player_stats.js';
 import { getScheduleCSVTool } from './tools/get_schedule_csv.js';
 import { listScheduleOptionsTool } from './tools/list_schedule_options.js';
+import { getTeamRosterTool } from './tools/get_team_roster.js';
 
 /**
  * Register all SCAHA tools with the MCP server
@@ -33,6 +34,7 @@ export function registerTools(server: Server) {
         getDivisionPlayerStatsTool.definition,
         getScheduleCSVTool.definition,
         listScheduleOptionsTool.definition,
+        getTeamRosterTool.definition,
       ],
     };
   });
@@ -57,6 +59,8 @@ export function registerTools(server: Server) {
           return await getScheduleCSVTool.handler(args);
         case 'list_schedule_options':
           return await listScheduleOptionsTool.handler(args);
+        case 'get_team_roster':
+          return await getTeamRosterTool.handler(args);
         default:
           throw new Error(`Unknown tool: ${name}`);
       }

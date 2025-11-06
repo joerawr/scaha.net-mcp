@@ -99,3 +99,17 @@ export interface ScoreboardOptionState {
   schedules: SelectOption[];
   teams: SelectOption[];
 }
+
+export interface TeamRoster {
+  team: string;
+  division: string;
+  season: string;
+  players: PlayerStats[];
+  goalies: GoalieStats[];
+}
+
+export interface GetTeamRosterParams {
+  season: string;
+  division: string;
+  team_slug: string;
+}

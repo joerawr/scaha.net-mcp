@@ -1,9 +1,11 @@
 import puppeteer, { type Page } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
-import { SelectOption, ScoreboardOptionState, TeamStats } from './types.js';
+import { SelectOption, ScoreboardOptionState, TeamStats, TeamRoster, PlayerStats, GoalieStats } from './types.js';
+import { teamNamesMatch } from './utils.js';
 
 const BASE_URL = 'https://www.scaha.net';
 const SCOREBOARD_URL = `${BASE_URL}/scaha/scoreboard.xhtml`;
+const STATS_CENTRAL_URL = `${BASE_URL}/scaha/statscentral.xhtml`;
 
 /**
  * Get browser executable path based on environment
@@ -415,6 +417,185 @@ export async function downloadScheduleCSVWithBrowser(
     }
 
     throw new Error('Could not find schedule table data after selecting team');
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * Get team roster with all players and goalies from Stats Central
+ */
+export async function getTeamRosterWithBrowser(
+  season: string,
+  division: string,
+  teamSlug: string
+): Promise<TeamRoster> {
+  const browserConfig = await getBrowserConfig();
+  const browser = await puppeteer.launch(browserConfig);
+
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 720 });
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36');
+
+    await page.goto(STATS_CENTRAL_URL, {
+      waitUntil: 'networkidle0',
+      timeout: 30000,
+    });
+
+    // Helper function to normalize season queries
+    const normalizeSeasonQuery = (value: string) =>
+      value.replace(/-/g, '/').replace(/\s+/g, ' ').trim();
+
+    const normalizedSeason = normalizeSeasonQuery(season);
+    const seasonQueries = [
+      season,
+      normalizedSeason,
+      `SCAHA ${normalizedSeason}`,
+      `SCAHA ${normalizedSeason} Season`,
+    ].filter(Boolean) as string[];
+
+    // Extract and select season
+    let seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
+    const seasonOption =
+      seasonQueries
+        .map((query) => findOption(seasons, query))
+        .find((opt): opt is SelectOption => Boolean(opt)) ??
+      seasons.find((opt) => opt.selected);
+
+    if (!seasonOption) {
+      throw new Error(`Season "${season}" not found on stats central page`);
+    }
+
+    if (!seasonOption.selected) {
+      await page.select('#j_id_4d\\:j_id_4kInner', seasonOption.value);
+      await page.waitForNetworkIdle({ timeout: 15000 });
+      seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
+    }
+
+    // Helper function to normalize schedule queries
+    const normalizeScheduleQuery = (value: string) =>
+      value.replace(/regular season/gi, '').trim();
+
+    const scheduleQueries = [
+      `${division} Regular Season`,
+      division,
+      `${division} Season`,
+      normalizeScheduleQuery(division),
+    ].filter(Boolean) as string[];
+
+    // Extract and select schedule/division
+    let schedules = await extractSelectOptions(page, '#j_id_4d\\:schedulelistInner option');
+    const scheduleOption =
+      scheduleQueries
+        .map((query) => findOption(schedules, query))
+        .find((opt): opt is SelectOption => Boolean(opt)) ??
+      schedules.find((opt) => opt.selected);
+
+    if (!scheduleOption) {
+      throw new Error(`Division "${division}" not found for season "${season}"`);
+    }
+
+    if (!scheduleOption.selected) {
+      await page.select('#j_id_4d\\:schedulelistInner', scheduleOption.value);
+      await page.waitForNetworkIdle({ timeout: 15000 });
+      schedules = await extractSelectOptions(page, '#j_id_4d\\:schedulelistInner option');
+    }
+
+    // Click Players button to load player stats
+    await page.click('#j_id_4d\\:j_id_4w');
+    await page.waitForNetworkIdle({ timeout: 15000 });
+
+    // Wait for player stats table to appear
+    await page.waitForSelector('#j_id_4d\\:playertotals tbody tr', { timeout: 15000 });
+
+    // Extract player stats
+    const players = await page.$$eval('#j_id_4d\\:playertotals tbody tr', (rows) => {
+      const results: PlayerStats[] = [];
+
+      for (const row of rows) {
+        const cells = Array.from(row.querySelectorAll('td')).map((cell) =>
+          (cell.textContent || '').trim()
+        );
+
+        if (cells.length < 8 || !cells[0] || !cells[1] || cells[1] === 'Name') {
+          continue;
+        }
+
+        results.push({
+          number: cells[0],
+          name: cells[1],
+          team: cells[2],
+          gp: Number.parseInt(cells[3], 10) || 0,
+          g: Number.parseInt(cells[4], 10) || 0,
+          a: Number.parseInt(cells[5], 10) || 0,
+          pts: Number.parseInt(cells[6], 10) || 0,
+          pims: Number.parseInt(cells[7], 10) || 0,
+        });
+      }
+
+      return results;
+    });
+
+    // Click Goalies button to load goalie stats
+    await page.click('#j_id_4d\\:j_id_4x');
+    await page.waitForNetworkIdle({ timeout: 15000 });
+
+    // Wait for goalie stats table to appear
+    await page.waitForSelector('#j_id_4d\\:goalietotals tbody tr', { timeout: 15000 });
+
+    // Extract goalie stats
+    const goalies = await page.$$eval('#j_id_4d\\:goalietotals tbody tr', (rows) => {
+      const results: GoalieStats[] = [];
+
+      for (const row of rows) {
+        const cells = Array.from(row.querySelectorAll('td')).map((cell) =>
+          (cell.textContent || '').trim()
+        );
+
+        if (cells.length < 9 || !cells[0] || !cells[1] || cells[1] === 'Name') {
+          continue;
+        }
+
+        const parseFloatOrNull = (value: string) => {
+          const parsed = Number.parseFloat(value);
+          return Number.isFinite(parsed) ? parsed : null;
+        };
+
+        results.push({
+          number: cells[0],
+          name: cells[1],
+          team: cells[2],
+          gp: Number.parseInt(cells[3], 10) || 0,
+          mins: Number.parseInt(cells[4], 10) || 0,
+          shots: Number.parseInt(cells[5], 10) || 0,
+          saves: Number.parseInt(cells[6], 10) || 0,
+          sv_pct: parseFloatOrNull(cells[7]),
+          gaa: parseFloatOrNull(cells[8]),
+        });
+      }
+
+      return results;
+    });
+
+    // Filter by team
+    const filteredPlayers = players.filter((p) => teamNamesMatch(p.team, teamSlug));
+    const filteredGoalies = goalies.filter((g) => teamNamesMatch(g.team, teamSlug));
+
+    if (filteredPlayers.length === 0 && filteredGoalies.length === 0) {
+      throw new Error(`No roster data found for team "${teamSlug}" in division "${division}"`);
+    }
+
+    // Determine the actual team name from the first player/goalie found
+    const actualTeamName = filteredPlayers[0]?.team || filteredGoalies[0]?.team || teamSlug;
+
+    return {
+      team: actualTeamName,
+      division,
+      season,
+      players: filteredPlayers,
+      goalies: filteredGoalies,
+    };
   } finally {
     await browser.close();
   }
