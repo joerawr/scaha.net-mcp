@@ -509,19 +509,24 @@ export async function getTeamRosterWithBrowser(
     // Wait for player stats table to appear
     await page.waitForSelector('#j_id_4d\\:playertotals tbody tr', { timeout: 15000 });
 
-    // Select "100" or "All" from DataTables length dropdown to get all players
+    // Select maximum available entries from DataTables length dropdown to get all players
     try {
       const lengthSelector = await page.$('select[name*="playertotals_length"]');
       if (lengthSelector) {
-        // Try to select "All" first, fallback to "100"
+        // Get all available options
         const options = await page.$$eval(
           'select[name*="playertotals_length"] option',
           (opts) => opts.map(o => ({ value: (o as HTMLOptionElement).value, text: o.textContent }))
         );
 
+        // Priority: 1) "All" option, 2) Highest numeric value
         const allOption = options.find(o => o.text?.toLowerCase().includes('all') || o.value === '-1');
-        const largeOption = options.find(o => o.value === '100');
-        const targetValue = (allOption || largeOption)?.value;
+        const numericOptions = options
+          .map(o => ({ ...o, numValue: parseInt(o.value, 10) }))
+          .filter(o => !isNaN(o.numValue) && o.numValue > 0)
+          .sort((a, b) => b.numValue - a.numValue);
+
+        const targetValue = allOption?.value || numericOptions[0]?.value;
 
         if (targetValue) {
           await page.select('select[name*="playertotals_length"]', targetValue);
@@ -568,19 +573,24 @@ export async function getTeamRosterWithBrowser(
     // Wait for goalie stats table to appear
     await page.waitForSelector('#j_id_4d\\:goalietotals tbody tr', { timeout: 15000 });
 
-    // Select "100" or "All" from DataTables length dropdown to get all goalies
+    // Select maximum available entries from DataTables length dropdown to get all goalies
     try {
       const lengthSelector = await page.$('select[name*="goalietotals_length"]');
       if (lengthSelector) {
-        // Try to select "All" first, fallback to "100"
+        // Get all available options
         const options = await page.$$eval(
           'select[name*="goalietotals_length"] option',
           (opts) => opts.map(o => ({ value: (o as HTMLOptionElement).value, text: o.textContent }))
         );
 
+        // Priority: 1) "All" option, 2) Highest numeric value
         const allOption = options.find(o => o.text?.toLowerCase().includes('all') || o.value === '-1');
-        const largeOption = options.find(o => o.value === '100');
-        const targetValue = (allOption || largeOption)?.value;
+        const numericOptions = options
+          .map(o => ({ ...o, numValue: parseInt(o.value, 10) }))
+          .filter(o => !isNaN(o.numValue) && o.numValue > 0)
+          .sort((a, b) => b.numValue - a.numValue);
+
+        const targetValue = allOption?.value || numericOptions[0]?.value;
 
         if (targetValue) {
           await page.select('select[name*="goalietotals_length"]', targetValue);
