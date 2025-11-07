@@ -108,6 +108,22 @@ Get complete player statistics rankings for a division. Returns all players sort
 
 **Returns:** Ranked list of all players with complete stats, metadata about total count, and whether more results exist (when using `limit`).
 
+### get_team_roster
+Get complete team roster with all players and goalies in a single call. Perfect for team leaderboard queries.
+
+**Parameters:**
+- `season` (required): Season identifier (e.g., "2024-25")
+- `division` (required): Division name (e.g., "14U B")
+- `team_slug` (required): Team name or identifier
+
+**Use cases:**
+- "Who has the most points on our team?"
+- "Show me all players on the Jr. Kings roster"
+- "Who are the top scorers on my team?"
+- "List the full team roster with stats"
+
+**Returns:** Complete roster with both skaters and goalies, including all stats for each player. Much more efficient than calling `get_player_stats` for each player individually.
+
 ### get_schedule_csv
 Download schedule as CSV (base64 encoded).
 
