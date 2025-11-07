@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { getTeamRosterWithBrowser } from '../lib/browser-scrapers.js';
+import { scrapeTeamRoster } from '../lib/scrapers.js';
 
 export const GetTeamRosterArgsSchema = z.object({
   season: z.string().describe('Season identifier (e.g., "2024-25")'),
@@ -43,7 +43,7 @@ export const getTeamRosterTool = {
       const { season, division, team_slug } =
         GetTeamRosterArgsSchema.parse(args);
 
-      const roster = await getTeamRosterWithBrowser(season, division, team_slug);
+      const roster = await scrapeTeamRoster(season, division, team_slug);
 
       // Add summary statistics
       const totalPlayers = roster.players.length;
