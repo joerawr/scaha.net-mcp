@@ -2,6 +2,7 @@ import puppeteer, { type Page } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import { SelectOption, ScoreboardOptionState, TeamStats, TeamRoster, PlayerStats, GoalieStats } from './types.js';
 import { teamNamesMatch } from './utils.js';
+import { escapeIdForSelector, parseScoreboardPage, parseStatsCentralPage } from './scaha-dom.js';
 
 const BASE_URL = 'https://www.scaha.net';
 const SCOREBOARD_URL = `${BASE_URL}/scaha/scoreboard.xhtml`;
@@ -79,8 +80,17 @@ export async function getScoreboardOptionsWithBrowser(
       timeout: 30000,
     });
 
+    const initialMarkup = await page.content();
+    const parsed = parseScoreboardPage(initialMarkup);
+    const { dom } = parsed;
+    const seasonSelector = `${escapeIdForSelector(dom.seasonSelectId)} option`;
+    const scheduleSelector = `${escapeIdForSelector(dom.scheduleSelectId)} option`;
+    const teamSelector = `${escapeIdForSelector(dom.teamSelectId)} option`;
+
     // Extract initial seasons
-    let seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
+    let seasons = parsed.options.seasons.length
+      ? parsed.options.seasons
+      : await extractSelectOptions(page, seasonSelector);
 
     // Select season if requested
     if (seasonQuery) {
@@ -93,16 +103,18 @@ export async function getScoreboardOptionsWithBrowser(
       }
 
       if (!targetSeason.selected) {
-        await page.select('#j_id_4d\\:j_id_4kInner', targetSeason.value);
+        await page.select(escapeIdForSelector(dom.seasonSelectId), targetSeason.value);
         await page.waitForNetworkIdle({ timeout: 10000 });
 
         // Re-extract seasons to get updated state
-        seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
+        seasons = await extractSelectOptions(page, seasonSelector);
       }
     }
 
     // Extract schedules (now populated based on season)
-    let schedules = await extractSelectOptions(page, '#j_id_4d\\:j_id_4nInner option');
+    let schedules = parsed.options.schedules.length
+      ? parsed.options.schedules
+      : await extractSelectOptions(page, scheduleSelector);
 
     // Select schedule if requested
     if (scheduleQuery) {
@@ -115,17 +127,19 @@ export async function getScoreboardOptionsWithBrowser(
       }
 
       if (!targetSchedule.selected) {
-        await page.select('#j_id_4d\\:j_id_4nInner', targetSchedule.value);
+        await page.select(escapeIdForSelector(dom.scheduleSelectId), targetSchedule.value);
         // Wait for the AJAX call to populate teams - this is the key!
         await page.waitForNetworkIdle({ timeout: 10000 });
 
         // Re-extract schedules to get updated state
-        schedules = await extractSelectOptions(page, '#j_id_4d\\:j_id_4nInner option');
+        schedules = await extractSelectOptions(page, scheduleSelector);
       }
     }
 
     // Extract teams (NOW populated by JavaScript!)
-    let teams = await extractSelectOptions(page, '#j_id_4d\\:j_id_4qInner option');
+    let teams = parsed.options.teams.length
+      ? parsed.options.teams
+      : await extractSelectOptions(page, teamSelector);
 
     // Select team if requested
     if (teamQuery) {
@@ -138,11 +152,11 @@ export async function getScoreboardOptionsWithBrowser(
       }
 
       if (!targetTeam.selected) {
-        await page.select('#j_id_4d\\:j_id_4qInner', targetTeam.value);
+        await page.select(escapeIdForSelector(dom.teamSelectId), targetTeam.value);
         await page.waitForNetworkIdle({ timeout: 10000 });
 
         // Re-extract teams to get updated state
-        teams = await extractSelectOptions(page, '#j_id_4d\\:j_id_4qInner option');
+        teams = await extractSelectOptions(page, teamSelector);
       }
     }
 
@@ -176,6 +190,13 @@ export async function getStandingsWithBrowser(
       timeout: 30000,
     });
 
+    const initialMarkup = await page.content();
+    const parsed = parseScoreboardPage(initialMarkup);
+    const { dom } = parsed;
+    const seasonSelector = `${escapeIdForSelector(dom.seasonSelectId)} option`;
+    const scheduleSelector = `${escapeIdForSelector(dom.scheduleSelectId)} option`;
+    const standingsSelector = `${escapeIdForSelector(`${dom.formId}:parts`)} tbody tr`;
+
     const normalizeSeasonQuery = (value: string) =>
       value.replace(/-/g, '/').replace(/\s+/g, ' ').trim();
 
@@ -187,7 +208,9 @@ export async function getStandingsWithBrowser(
       `SCAHA ${normalizedSeason} Season`,
     ].filter(Boolean) as string[];
 
-    let seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
+    let seasons = parsed.options.seasons.length
+      ? parsed.options.seasons
+      : await extractSelectOptions(page, seasonSelector);
     const seasonOption =
       seasonQueries
         .map((query) => findOption(seasons, query))
@@ -199,9 +222,9 @@ export async function getStandingsWithBrowser(
     }
 
     if (!seasonOption.selected) {
-      await page.select('#j_id_4d\\:j_id_4kInner', seasonOption.value);
+      await page.select(escapeIdForSelector(dom.seasonSelectId), seasonOption.value);
       await page.waitForNetworkIdle({ timeout: 15000 });
-      seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
+      seasons = await extractSelectOptions(page, seasonSelector);
     }
 
     const normalizeScheduleQuery = (value: string) =>
@@ -214,7 +237,9 @@ export async function getStandingsWithBrowser(
       normalizeScheduleQuery(schedule),
     ].filter(Boolean) as string[];
 
-    let schedules = await extractSelectOptions(page, '#j_id_4d\\:j_id_4nInner option');
+    let schedules = parsed.options.schedules.length
+      ? parsed.options.schedules
+      : await extractSelectOptions(page, scheduleSelector);
     const scheduleOption =
       scheduleQueries
         .map((query) => findOption(schedules, query))
@@ -226,12 +251,10 @@ export async function getStandingsWithBrowser(
     }
 
     if (!scheduleOption.selected) {
-      await page.select('#j_id_4d\\:j_id_4nInner', scheduleOption.value);
+      await page.select(escapeIdForSelector(dom.scheduleSelectId), scheduleOption.value);
       await page.waitForNetworkIdle({ timeout: 15000 });
-      schedules = await extractSelectOptions(page, '#j_id_4d\\:j_id_4nInner option');
+      schedules = await extractSelectOptions(page, scheduleSelector);
     }
-
-    const standingsSelector = '#j_id_4d\\:parts tbody tr';
 
     await page.waitForFunction(
       (selector: string) => {
@@ -307,28 +330,41 @@ export async function downloadScheduleCSVWithBrowser(
       timeout: 30000,
     });
 
+    const initialMarkup = await page.content();
+    const parsed = parseScoreboardPage(initialMarkup);
+    const { dom } = parsed;
+    const seasonSelector = `${escapeIdForSelector(dom.seasonSelectId)} option`;
+    const scheduleSelector = `${escapeIdForSelector(dom.scheduleSelectId)} option`;
+    const teamSelector = `${escapeIdForSelector(dom.teamSelectId)} option`;
+
     // Select season
-    const seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
+    const seasons = parsed.options.seasons.length
+      ? parsed.options.seasons
+      : await extractSelectOptions(page, seasonSelector);
     const targetSeason = seasons.find(s => s.label.toLowerCase().includes(season.toLowerCase()));
     if (!targetSeason) throw new Error(`Season "${season}" not found`);
 
-    await page.select('#j_id_4d\\:j_id_4kInner', targetSeason.value);
+    await page.select(escapeIdForSelector(dom.seasonSelectId), targetSeason.value);
     await page.waitForNetworkIdle({ timeout: 10000 });
 
     // Select schedule
-    const schedules = await extractSelectOptions(page, '#j_id_4d\\:j_id_4nInner option');
+    const schedules = parsed.options.schedules.length
+      ? parsed.options.schedules
+      : await extractSelectOptions(page, scheduleSelector);
     const targetSchedule = schedules.find(s => s.label.toLowerCase().includes(schedule.toLowerCase()));
     if (!targetSchedule) throw new Error(`Schedule "${schedule}" not found`);
 
-    await page.select('#j_id_4d\\:j_id_4nInner', targetSchedule.value);
+    await page.select(escapeIdForSelector(dom.scheduleSelectId), targetSchedule.value);
     await page.waitForNetworkIdle({ timeout: 10000 });
 
     // Select team
-    const teams = await extractSelectOptions(page, '#j_id_4d\\:j_id_4qInner option');
+    const teams = parsed.options.teams.length
+      ? parsed.options.teams
+      : await extractSelectOptions(page, teamSelector);
     const targetTeam = teams.find(t => t.label.toLowerCase().includes(team.toLowerCase()));
     if (!targetTeam) throw new Error(`Team "${team}" not found`);
 
-    await page.select('#j_id_4d\\:j_id_4qInner', targetTeam.value);
+    await page.select(escapeIdForSelector(dom.teamSelectId), targetTeam.value);
     await page.waitForNetworkIdle({ timeout: 10000 });
 
     // After selecting the team, the schedule table should be visible
@@ -443,6 +479,18 @@ export async function getTeamRosterWithBrowser(
       timeout: 30000,
     });
 
+    const initialMarkup = await page.content();
+    const parsed = parseStatsCentralPage(initialMarkup);
+    let { dom, seasons, schedules } = parsed;
+    const seasonSelector = `[id="${dom.seasonSelectId}"] option`;
+    const scheduleSelector = `[id="${dom.scheduleSelectId}"] option`;
+    const seasonControl = `[id="${dom.seasonSelectId}"]`;
+    const scheduleControl = `[id="${dom.scheduleSelectId}"]`;
+    const playersButtonSelector = `[id="${dom.playersButtonId}"]`;
+    const goaliesButtonSelector = `[id="${dom.goaliesButtonId}"]`;
+    const playersTableSelector = `[id="${dom.playersTableId}"] tbody tr`;
+    const goaliesTableSelector = `[id="${dom.goaliesTableId}"] tbody tr`;
+
     // Helper function to normalize season queries
     const normalizeSeasonQuery = (value: string) =>
       value.replace(/-/g, '/').replace(/\s+/g, ' ').trim();
@@ -456,7 +504,9 @@ export async function getTeamRosterWithBrowser(
     ].filter(Boolean) as string[];
 
     // Extract and select season
-    let seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
+    seasons = seasons.length
+      ? seasons
+      : await extractSelectOptions(page, seasonSelector);
     const seasonOption =
       seasonQueries
         .map((query) => findOption(seasons, query))
@@ -468,9 +518,9 @@ export async function getTeamRosterWithBrowser(
     }
 
     if (!seasonOption.selected) {
-      await page.select('#j_id_4d\\:j_id_4kInner', seasonOption.value);
+      await page.select(seasonControl, seasonOption.value);
       await page.waitForNetworkIdle({ timeout: 15000 });
-      seasons = await extractSelectOptions(page, '#j_id_4d\\:j_id_4kInner option');
+      seasons = await extractSelectOptions(page, seasonSelector);
     }
 
     // Helper function to normalize schedule queries
@@ -485,7 +535,9 @@ export async function getTeamRosterWithBrowser(
     ].filter(Boolean) as string[];
 
     // Extract and select schedule/division
-    let schedules = await extractSelectOptions(page, '#j_id_4d\\:schedulelistInner option');
+    schedules = schedules.length
+      ? schedules
+      : await extractSelectOptions(page, scheduleSelector);
     const scheduleOption =
       scheduleQueries
         .map((query) => findOption(schedules, query))
@@ -497,20 +549,20 @@ export async function getTeamRosterWithBrowser(
     }
 
     if (!scheduleOption.selected) {
-      await page.select('#j_id_4d\\:schedulelistInner', scheduleOption.value);
+      await page.select(scheduleControl, scheduleOption.value);
       await page.waitForNetworkIdle({ timeout: 15000 });
-      schedules = await extractSelectOptions(page, '#j_id_4d\\:schedulelistInner option');
+      schedules = await extractSelectOptions(page, scheduleSelector);
     }
 
     // Click Players button to load player stats
-    await page.click('#j_id_4d\\:j_id_4w');
+    await page.click(playersButtonSelector);
     await page.waitForNetworkIdle({ timeout: 15000 });
 
     // Wait for player stats table to appear
-    await page.waitForSelector('#j_id_4d\\:playertotals tbody tr', { timeout: 15000 });
+    await page.waitForSelector(playersTableSelector, { timeout: 15000 });
 
     // Extract player stats
-    const players = await page.$$eval('#j_id_4d\\:playertotals tbody tr', (rows) => {
+    const players = await page.$$eval(playersTableSelector, (rows) => {
       const results: PlayerStats[] = [];
 
       for (const row of rows) {
@@ -538,14 +590,14 @@ export async function getTeamRosterWithBrowser(
     });
 
     // Click Goalies button to load goalie stats
-    await page.click('#j_id_4d\\:j_id_4x');
+    await page.click(goaliesButtonSelector);
     await page.waitForNetworkIdle({ timeout: 15000 });
 
     // Wait for goalie stats table to appear
-    await page.waitForSelector('#j_id_4d\\:goalietotals tbody tr', { timeout: 15000 });
+    await page.waitForSelector(goaliesTableSelector, { timeout: 15000 });
 
     // Extract goalie stats
-    const goalies = await page.$$eval('#j_id_4d\\:goalietotals tbody tr', (rows) => {
+    const goalies = await page.$$eval(goaliesTableSelector, (rows) => {
       const results: GoalieStats[] = [];
 
       for (const row of rows) {

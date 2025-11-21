@@ -9,6 +9,12 @@ import {
 } from './types.js';
 import { normalizeTeamName, teamNamesMatch, parseScore } from './utils.js';
 import { getStandingsWithBrowser } from './browser-scrapers.js';
+import {
+  escapeIdForSelector,
+  extractFormUpdate,
+  parseScoreboardPage,
+  parseStatsCentralPage,
+} from './scaha-dom.js';
 
 const BASE_URL = 'https://www.scaha.net';
 const SCOREBOARD_URL = `${BASE_URL}/scaha/scoreboard.xhtml`;
@@ -96,56 +102,6 @@ async function submitJSFForm(
   return text;
 }
 
-function escapeId(id: string): string {
-  return `#${id.replace(/:/g, '\\:')}`;
-}
-
-function parseSelectOptionsFromDoc(
-  $: cheerio.CheerioAPI,
-  elementId: string
-): SelectOption[] {
-  const selector = escapeId(elementId);
-  const options: SelectOption[] = [];
-
-  $(selector)
-    .find('option')
-    .each((_, option) => {
-      const el = $(option);
-      options.push({
-        value: el.attr('value') ?? '',
-        label: el.text().trim(),
-        selected: el.is(':selected') || el.attr('selected') !== undefined,
-      });
-    });
-
-  return options;
-}
-
-function parseScoreboardOptionState(html: string): ScoreboardOptionState {
-  const $ = cheerio.load(html);
-  return {
-    seasons: parseSelectOptionsFromDoc($, 'j_id_4d:j_id_4kInner'),
-    schedules: parseSelectOptionsFromDoc($, 'j_id_4d:j_id_4nInner'),
-    teams: parseSelectOptionsFromDoc($, 'j_id_4d:j_id_4qInner'),
-  };
-}
-
-function extractUpdatedFormHtml(partialResponse: string): string | null {
-  const targetedMatch = partialResponse.match(
-    /<update id="j_id_4d"><!\[CDATA\[(.*?)\]\]><\/update>/s
-  );
-
-  if (targetedMatch && targetedMatch[1]) {
-    return targetedMatch[1];
-  }
-
-  const fragments = [...partialResponse.matchAll(/<!\[CDATA\[(.*?)\]\]>/gs)].map(
-    ([, fragment]) => fragment
-  );
-
-  return fragments.length ? fragments.join('') : null;
-}
-
 function findOptionByLabel(options: SelectOption[], query: string): SelectOption | undefined {
   const normalizedQuery = query.trim().toLowerCase();
   return (
@@ -160,7 +116,9 @@ export async function getScoreboardOptionsState(
   teamQuery?: string
 ): Promise<ScoreboardOptionState> {
   const { session, html } = await initJSFSession(SCOREBOARD_URL);
-  let optionState = parseScoreboardOptionState(html);
+  let parsed = parseScoreboardPage(html);
+  let { dom } = parsed;
+  let optionState = parsed.options;
 
   if (seasonQuery) {
     const targetSeason = findOptionByLabel(optionState.seasons, seasonQuery);
@@ -171,15 +129,17 @@ export async function getScoreboardOptionsState(
 
     if (!targetSeason.selected) {
       const partial = await submitJSFForm(SCOREBOARD_URL, session, {
-        'j_id_4d:j_id_4kInner': targetSeason.value,
-        'j_id_4d:j_id_4nInner': '0',
-        'j_id_4d:j_id_4qInner': '0',
-        'j_id_4d_SUBMIT': '1',
+        [dom.seasonField]: targetSeason.value,
+        [dom.scheduleField]: '0',
+        [dom.teamField]: '0',
+        [dom.submitField]: '1',
       });
 
-      const updatedHtml = extractUpdatedFormHtml(partial);
+      const updatedHtml = extractFormUpdate(partial, dom.formId);
       if (updatedHtml) {
-        optionState = parseScoreboardOptionState(updatedHtml);
+        parsed = parseScoreboardPage(updatedHtml);
+        dom = parsed.dom;
+        optionState = parsed.options;
       }
     }
   }
@@ -194,15 +154,17 @@ export async function getScoreboardOptionsState(
     if (!targetSchedule.selected) {
       const currentSeason = optionState.seasons.find(s => s.selected);
       const partial = await submitJSFForm(SCOREBOARD_URL, session, {
-        'j_id_4d:j_id_4kInner': currentSeason?.value || '0',
-        'j_id_4d:j_id_4nInner': targetSchedule.value,
-        'j_id_4d:j_id_4qInner': '0',
-        'j_id_4d_SUBMIT': '1',
+        [dom.seasonField]: currentSeason?.value || '0',
+        [dom.scheduleField]: targetSchedule.value,
+        [dom.teamField]: '0',
+        [dom.submitField]: '1',
       });
 
-      const updatedHtml = extractUpdatedFormHtml(partial);
+      const updatedHtml = extractFormUpdate(partial, dom.formId);
       if (updatedHtml) {
-        optionState = parseScoreboardOptionState(updatedHtml);
+        parsed = parseScoreboardPage(updatedHtml);
+        dom = parsed.dom;
+        optionState = parsed.options;
       }
     }
   }
@@ -218,15 +180,17 @@ export async function getScoreboardOptionsState(
       const currentSeason = optionState.seasons.find(s => s.selected);
       const currentSchedule = optionState.schedules.find(s => s.selected);
       const partial = await submitJSFForm(SCOREBOARD_URL, session, {
-        'j_id_4d:j_id_4kInner': currentSeason?.value || '0',
-        'j_id_4d:j_id_4nInner': currentSchedule?.value || '0',
-        'j_id_4d:j_id_4qInner': targetTeam.value,
-        'j_id_4d_SUBMIT': '1',
+        [dom.seasonField]: currentSeason?.value || '0',
+        [dom.scheduleField]: currentSchedule?.value || '0',
+        [dom.teamField]: targetTeam.value,
+        [dom.submitField]: '1',
       });
 
-      const updatedHtml = extractUpdatedFormHtml(partial);
+      const updatedHtml = extractFormUpdate(partial, dom.formId);
       if (updatedHtml) {
-        optionState = parseScoreboardOptionState(updatedHtml);
+        parsed = parseScoreboardPage(updatedHtml);
+        dom = parsed.dom;
+        optionState = parsed.options;
       }
     }
   }
@@ -269,14 +233,6 @@ export async function scrapePlayerStats(
 ): Promise<(PlayerStats | GoalieStats)[]> {
   const { session, html } = await initJSFSession(STATS_CENTRAL_URL);
 
-  const parseState = (markup: string) => {
-    const doc = cheerio.load(markup);
-    return {
-      seasons: parseSelectOptionsFromDoc(doc, 'j_id_4d:j_id_4kInner'),
-      schedules: parseSelectOptionsFromDoc(doc, 'j_id_4d:schedulelistInner'),
-    };
-  };
-
   const resolveOption = (options: SelectOption[], queries: string[]): SelectOption | undefined => {
     for (const query of queries) {
       if (!query) continue;
@@ -289,8 +245,7 @@ export async function scrapePlayerStats(
   const normalizeSeasonQuery = (value: string) =>
     value.replace(/-/g, '/').replace(/\s+/g, ' ').trim();
 
-  let currentMarkup = html;
-  let { seasons, schedules } = parseState(currentMarkup);
+  let { dom, seasons, schedules } = parseStatsCentralPage(html);
 
   // Ensure the desired season is selected
   const seasonQueries = [
@@ -332,12 +287,12 @@ export async function scrapePlayerStats(
     const selectedSeasonValue =
       seasons.find((opt) => opt.selected)?.value ?? seasonOption.value;
     const response = await submitJSFForm(STATS_CENTRAL_URL, session, {
-      'j_id_4d:j_id_4kInner': selectedSeasonValue,
-      'j_id_4d:schedulelistInner': scheduleOption.value,
-      'j_id_4d_SUBMIT': '1',
+      [dom.seasonField]: selectedSeasonValue,
+      [dom.scheduleField]: scheduleOption.value,
+      [dom.submitField]: '1',
     });
-    currentMarkup = response;
-    ({ seasons, schedules } = parseState(currentMarkup));
+    const updatedHtml = extractFormUpdate(response, dom.formId) ?? response;
+    ({ dom, seasons, schedules } = parseStatsCentralPage(updatedHtml));
   }
 
   // Trigger the Players button to load stats table
@@ -347,20 +302,21 @@ export async function scrapePlayerStats(
     schedules.find((opt) => opt.selected)?.value ?? scheduleOption.value;
 
   const buttonParam =
-    category === 'goalies' ? 'j_id_4d:j_id_4x' : 'j_id_4d:j_id_4w';
+    category === 'goalies' ? dom.goaliesButtonId : dom.playersButtonId;
 
   const statsResponse = await submitJSFForm(STATS_CENTRAL_URL, session, {
-    'j_id_4d:j_id_4kInner': selectedSeasonValue,
-    'j_id_4d:schedulelistInner': selectedScheduleValue,
+    [dom.seasonField]: selectedSeasonValue,
+    [dom.scheduleField]: selectedScheduleValue,
     [buttonParam]: buttonParam,
-    'j_id_4d_SUBMIT': '1',
+    [dom.submitField]: '1',
   });
 
-  const statsDoc = cheerio.load(statsResponse);
+  const statsHtml = extractFormUpdate(statsResponse, dom.formId) ?? statsResponse;
+  const statsDoc = cheerio.load(statsHtml);
 
   if (category === 'goalies') {
     const goalies: GoalieStats[] = [];
-    statsDoc('#j_id_4d\\:goalietotals tbody tr').each((_, row) => {
+    statsDoc(`[id="${dom.goaliesTableId}"] tbody tr`).each((_, row) => {
       const cells = statsDoc(row).find('td');
       if (cells.length < 9) return;
 
@@ -392,7 +348,7 @@ export async function scrapePlayerStats(
 
   const players: PlayerStats[] = [];
 
-  statsDoc('#j_id_4d\\:playertotals tbody tr').each((_, row) => {
+  statsDoc(`[id="${dom.playersTableId}"] tbody tr`).each((_, row) => {
     const cells = statsDoc(row).find('td');
     if (cells.length < 8) return;
 
@@ -436,14 +392,6 @@ export async function scrapeTeamRoster(
 }> {
   const { session, html } = await initJSFSession(STATS_CENTRAL_URL);
 
-  const parseState = (markup: string) => {
-    const doc = cheerio.load(markup);
-    return {
-      seasons: parseSelectOptionsFromDoc(doc, 'j_id_4d:j_id_4kInner'),
-      schedules: parseSelectOptionsFromDoc(doc, 'j_id_4d:schedulelistInner'),
-    };
-  };
-
   const resolveOption = (options: SelectOption[], queries: string[]): SelectOption | undefined => {
     for (const query of queries) {
       if (!query) continue;
@@ -456,8 +404,7 @@ export async function scrapeTeamRoster(
   const normalizeSeasonQuery = (value: string) =>
     value.replace(/-/g, '/').replace(/\s+/g, ' ').trim();
 
-  let currentMarkup = html;
-  let { seasons, schedules } = parseState(currentMarkup);
+  let { dom, seasons, schedules } = parseStatsCentralPage(html);
 
   // Ensure the desired season is selected
   const seasonQueries = [
@@ -494,12 +441,12 @@ export async function scrapeTeamRoster(
     const selectedSeasonValue =
       seasons.find((opt) => opt.selected)?.value ?? seasonOption.value;
     const response = await submitJSFForm(STATS_CENTRAL_URL, session, {
-      'j_id_4d:j_id_4kInner': selectedSeasonValue,
-      'j_id_4d:schedulelistInner': scheduleOption.value,
-      'j_id_4d_SUBMIT': '1',
+      [dom.seasonField]: selectedSeasonValue,
+      [dom.scheduleField]: scheduleOption.value,
+      [dom.submitField]: '1',
     });
-    currentMarkup = response;
-    ({ seasons, schedules } = parseState(currentMarkup));
+    const updatedHtml = extractFormUpdate(response, dom.formId) ?? response;
+    ({ dom, seasons, schedules } = parseStatsCentralPage(updatedHtml));
   }
 
   const selectedSeasonValue =
@@ -509,16 +456,17 @@ export async function scrapeTeamRoster(
 
   // Fetch players by clicking Players button
   const playersResponse = await submitJSFForm(STATS_CENTRAL_URL, session, {
-    'j_id_4d:j_id_4kInner': selectedSeasonValue,
-    'j_id_4d:schedulelistInner': selectedScheduleValue,
-    'j_id_4d:j_id_4w': 'j_id_4d:j_id_4w',
-    'j_id_4d_SUBMIT': '1',
+    [dom.seasonField]: selectedSeasonValue,
+    [dom.scheduleField]: selectedScheduleValue,
+    [dom.playersButtonId]: dom.playersButtonId,
+    [dom.submitField]: '1',
   });
 
-  const playersDoc = cheerio.load(playersResponse);
+  const playersHtml = extractFormUpdate(playersResponse, dom.formId) ?? playersResponse;
+  const playersDoc = cheerio.load(playersHtml);
   const players: PlayerStats[] = [];
 
-  playersDoc('#j_id_4d\\:playertotals tbody tr').each((_, row) => {
+  playersDoc(`[id="${dom.playersTableId}"] tbody tr`).each((_, row) => {
     const cells = playersDoc(row).find('td');
     if (cells.length < 8) return;
 
@@ -544,16 +492,17 @@ export async function scrapeTeamRoster(
 
   // Fetch goalies by clicking Goalies button
   const goaliesResponse = await submitJSFForm(STATS_CENTRAL_URL, session, {
-    'j_id_4d:j_id_4kInner': selectedSeasonValue,
-    'j_id_4d:schedulelistInner': selectedScheduleValue,
-    'j_id_4d:j_id_4x': 'j_id_4d:j_id_4x',
-    'j_id_4d_SUBMIT': '1',
+    [dom.seasonField]: selectedSeasonValue,
+    [dom.scheduleField]: selectedScheduleValue,
+    [dom.goaliesButtonId]: dom.goaliesButtonId,
+    [dom.submitField]: '1',
   });
 
-  const goaliesDoc = cheerio.load(goaliesResponse);
+  const goaliesHtml = extractFormUpdate(goaliesResponse, dom.formId) ?? goaliesResponse;
+  const goaliesDoc = cheerio.load(goaliesHtml);
   const goalies: GoalieStats[] = [];
 
-  goaliesDoc('#j_id_4d\\:goalietotals tbody tr').each((_, row) => {
+  goaliesDoc(`[id="${dom.goaliesTableId}"] tbody tr`).each((_, row) => {
     const cells = goaliesDoc(row).find('td');
     if (cells.length < 9) return;
 
