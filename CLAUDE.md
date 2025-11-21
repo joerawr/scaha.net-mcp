@@ -114,6 +114,12 @@ We use **two separate TypeScript configs** to handle the dual-transport architec
 **Scraping modules:**
 - `src/lib/browser-scrapers.ts` - Puppeteer-based (currently used)
 - `src/lib/scrapers.ts` - Fetch-based (legacy, doesn't work reliably)
+- `src/lib/scaha-dom.ts` - Detects live JSF form/select/button/table IDs so scrapers survive SCAHA ID renames
+
+**JSF ID churn + resilience**
+- SCAHA periodically renames JSF component IDs (e.g., scoreboard/stats central moved from `j_id_4c` → `j_id_4d` → `j_id_4e` during the 2024/25–2025/26 turnover).
+- `scaha-dom.ts` parses the page to locate season/schedule/team selects, Players/Goalies buttons, and stats tables by content instead of hard-coding IDs.
+- If selectors break again, first verify whether the form IDs shifted; if the markup shape changed (different selects/buttons/tables), adjust the heuristics in `scaha-dom.ts` rather than hard-coding new IDs.
 
 ### Build System
 
