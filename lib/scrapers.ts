@@ -7,6 +7,11 @@ import {
   ScoreboardOptionState,
 } from './types';
 import { normalizeTeamName, teamNamesMatch, parseScore } from './utils';
+import {
+  extractFormUpdate,
+  parseScoreboardPage,
+  parseStatsCentralPage,
+} from './scaha-dom';
 
 const BASE_URL = 'https://www.scaha.net';
 const SCOREBOARD_URL = `${BASE_URL}/scaha/scoreboard.xhtml`;
@@ -87,56 +92,6 @@ async function submitJSFForm(
   return text;
 }
 
-function escapeId(id: string): string {
-  return `#${id.replace(/:/g, '\\:')}`;
-}
-
-function parseSelectOptionsFromDoc(
-  $: cheerio.CheerioAPI,
-  elementId: string
-): SelectOption[] {
-  const selector = escapeId(elementId);
-  const options: SelectOption[] = [];
-
-  $(selector)
-    .find('option')
-    .each((_, option) => {
-      const el = $(option);
-      options.push({
-        value: el.attr('value') ?? '',
-        label: el.text().trim(),
-        selected: el.is(':selected') || el.attr('selected') !== undefined,
-      });
-    });
-
-  return options;
-}
-
-function parseScoreboardOptionState(html: string): ScoreboardOptionState {
-  const $ = cheerio.load(html);
-  return {
-    seasons: parseSelectOptionsFromDoc($, 'j_id_4c:j_id_4jInner'),
-    schedules: parseSelectOptionsFromDoc($, 'j_id_4c:j_id_4mInner'),
-    teams: parseSelectOptionsFromDoc($, 'j_id_4c:j_id_4pInner'),
-  };
-}
-
-function extractUpdatedFormHtml(partialResponse: string): string | null {
-  const targetedMatch = partialResponse.match(
-    /<update id="j_id_4c"><!\[CDATA\[(.*?)\]\]><\/update>/s
-  );
-
-  if (targetedMatch && targetedMatch[1]) {
-    return targetedMatch[1];
-  }
-
-  const fragments = [...partialResponse.matchAll(/<!\[CDATA\[(.*?)\]\]>/gs)].map(
-    ([, fragment]) => fragment
-  );
-
-  return fragments.length ? fragments.join('') : null;
-}
-
 function findOptionByLabel(options: SelectOption[], query: string): SelectOption | undefined {
   const normalizedQuery = query.trim().toLowerCase();
   return (
@@ -151,7 +106,9 @@ export async function getScoreboardOptionsState(
   teamQuery?: string
 ): Promise<ScoreboardOptionState> {
   const { session, html } = await initJSFSession(SCOREBOARD_URL);
-  let optionState = parseScoreboardOptionState(html);
+  let parsed = parseScoreboardPage(html);
+  let { dom } = parsed;
+  let optionState = parsed.options;
 
   if (seasonQuery) {
     const targetSeason = findOptionByLabel(optionState.seasons, seasonQuery);
@@ -162,15 +119,17 @@ export async function getScoreboardOptionsState(
 
     if (!targetSeason.selected) {
       const partial = await submitJSFForm(SCOREBOARD_URL, session, {
-        'j_id_4c:j_id_4jInner': targetSeason.value,
-        'j_id_4c:j_id_4mInner': '0',
-        'j_id_4c:j_id_4pInner': '0',
-        'j_id_4c_SUBMIT': '1',
+        [dom.seasonField]: targetSeason.value,
+        [dom.scheduleField]: '0',
+        [dom.teamField]: '0',
+        [dom.submitField]: '1',
       });
 
-      const updatedHtml = extractUpdatedFormHtml(partial);
+      const updatedHtml = extractFormUpdate(partial, dom.formId);
       if (updatedHtml) {
-        optionState = parseScoreboardOptionState(updatedHtml);
+        parsed = parseScoreboardPage(updatedHtml);
+        dom = parsed.dom;
+        optionState = parsed.options;
       }
     }
   }
@@ -185,15 +144,17 @@ export async function getScoreboardOptionsState(
     if (!targetSchedule.selected) {
       const currentSeason = optionState.seasons.find(s => s.selected);
       const partial = await submitJSFForm(SCOREBOARD_URL, session, {
-        'j_id_4c:j_id_4jInner': currentSeason?.value || '0',
-        'j_id_4c:j_id_4mInner': targetSchedule.value,
-        'j_id_4c:j_id_4pInner': '0',
-        'j_id_4c_SUBMIT': '1',
+        [dom.seasonField]: currentSeason?.value || '0',
+        [dom.scheduleField]: targetSchedule.value,
+        [dom.teamField]: '0',
+        [dom.submitField]: '1',
       });
 
-      const updatedHtml = extractUpdatedFormHtml(partial);
+      const updatedHtml = extractFormUpdate(partial, dom.formId);
       if (updatedHtml) {
-        optionState = parseScoreboardOptionState(updatedHtml);
+        parsed = parseScoreboardPage(updatedHtml);
+        dom = parsed.dom;
+        optionState = parsed.options;
       }
     }
   }
@@ -209,15 +170,17 @@ export async function getScoreboardOptionsState(
       const currentSeason = optionState.seasons.find(s => s.selected);
       const currentSchedule = optionState.schedules.find(s => s.selected);
       const partial = await submitJSFForm(SCOREBOARD_URL, session, {
-        'j_id_4c:j_id_4jInner': currentSeason?.value || '0',
-        'j_id_4c:j_id_4mInner': currentSchedule?.value || '0',
-        'j_id_4c:j_id_4pInner': targetTeam.value,
-        'j_id_4c_SUBMIT': '1',
+        [dom.seasonField]: currentSeason?.value || '0',
+        [dom.scheduleField]: currentSchedule?.value || '0',
+        [dom.teamField]: targetTeam.value,
+        [dom.submitField]: '1',
       });
 
-      const updatedHtml = extractUpdatedFormHtml(partial);
+      const updatedHtml = extractFormUpdate(partial, dom.formId);
       if (updatedHtml) {
-        optionState = parseScoreboardOptionState(updatedHtml);
+        parsed = parseScoreboardPage(updatedHtml);
+        dom = parsed.dom;
+        optionState = parsed.options;
       }
     }
   }
@@ -285,36 +248,103 @@ export async function scrapePlayerStats(
   division: string,
   teamSlug: string
 ): Promise<PlayerStats[]> {
-  const { html } = await initJSFSession(STATS_CENTRAL_URL);
-  const $ = cheerio.load(html);
+  const { session, html } = await initJSFSession(STATS_CENTRAL_URL);
+  const resolveOption = (options: SelectOption[], queries: string[]): SelectOption | undefined => {
+    for (const query of queries) {
+      if (!query) continue;
+      const match = findOptionByLabel(options, query);
+      if (match) return match;
+    }
+    return undefined;
+  };
+
+  const normalizeSeasonQuery = (value: string) =>
+    value.replace(/-/g, '/').replace(/\s+/g, ' ').trim();
+
+  let { dom, seasons, schedules } = parseStatsCentralPage(html);
+
+  // Ensure the desired season is selected
+  const seasonQueries = [
+    normalizeSeasonQuery(season),
+    `SCAHA ${normalizeSeasonQuery(season)}`,
+    `SCAHA ${normalizeSeasonQuery(season)} Season`,
+  ];
+  const seasonOption = resolveOption(seasons, seasonQueries);
+  if (!seasonOption) {
+    throw new Error(`Season "${season}" not found on stats page.`);
+  }
+
+  if (!seasonOption.selected) {
+    const response = await submitJSFForm(STATS_CENTRAL_URL, session, {
+      [dom.seasonField]: seasonOption.value,
+      [dom.scheduleField]: '0',
+      [dom.submitField]: '1',
+    });
+    const updatedHtml = extractFormUpdate(response, dom.formId) ?? response;
+    ({ dom, seasons, schedules } = parseStatsCentralPage(updatedHtml));
+  }
+
+  // Ensure the correct schedule/division is loaded
+  const scheduleQueries = [
+    division,
+    `${division} Regular Season`,
+    `${division} Season`,
+  ];
+  const scheduleOption = resolveOption(schedules, scheduleQueries);
+  if (!scheduleOption) {
+    throw new Error(`Division "${division}" not found for season "${season}".`);
+  }
+
+  if (!scheduleOption.selected) {
+    const selectedSeasonValue =
+      seasons.find((opt) => opt.selected)?.value ?? seasonOption.value;
+    const response = await submitJSFForm(STATS_CENTRAL_URL, session, {
+      [dom.seasonField]: selectedSeasonValue,
+      [dom.scheduleField]: scheduleOption.value,
+      [dom.submitField]: '1',
+    });
+    const updatedHtml = extractFormUpdate(response, dom.formId) ?? response;
+    ({ dom, seasons, schedules } = parseStatsCentralPage(updatedHtml));
+  }
+
+  const selectedSeasonValue =
+    seasons.find((opt) => opt.selected)?.value ?? seasonOption.value;
+  const selectedScheduleValue =
+    schedules.find((opt) => opt.selected)?.value ?? scheduleOption.value;
+
+  const statsResponse = await submitJSFForm(STATS_CENTRAL_URL, session, {
+    [dom.seasonField]: selectedSeasonValue,
+    [dom.scheduleField]: selectedScheduleValue,
+    [dom.playersButtonId]: dom.playersButtonId,
+    [dom.submitField]: '1',
+  });
+
+  const statsHtml = extractFormUpdate(statsResponse, dom.formId) ?? statsResponse;
+  const statsDoc = cheerio.load(statsHtml);
 
   const players: PlayerStats[] = [];
 
-  // Parse player stats table
-  // Columns: #, Name, Team, GP, G, A, Pts, PIMS
-  $('table tbody tr').each((_, row) => {
-    const cells = $(row).find('td');
-    if (cells.length >= 8) {
-      const number = $(cells[0]).text().trim();
-      const name = $(cells[1]).text().trim();
-      const team = $(cells[2]).text().trim();
+  statsDoc(`[id="${dom.playersTableId}"] tbody tr`).each((_, row) => {
+    const cells = statsDoc(row).find('td');
+    if (cells.length < 8) return;
 
-      // Skip header rows
-      if (number && name && name !== 'Name') {
-        // Filter by team if specified
-        if (!teamSlug || teamNamesMatch(team, teamSlug)) {
-          players.push({
-            number,
-            name,
-            team,
-            gp: parseInt($(cells[3]).text().trim(), 10) || 0,
-            g: parseInt($(cells[4]).text().trim(), 10) || 0,
-            a: parseInt($(cells[5]).text().trim(), 10) || 0,
-            pts: parseInt($(cells[6]).text().trim(), 10) || 0,
-            pims: parseInt($(cells[7]).text().trim(), 10) || 0,
-          });
-        }
-      }
+    const number = statsDoc(cells[0]).text().trim();
+    const name = statsDoc(cells[1]).text().trim();
+    const team = statsDoc(cells[2]).text().trim();
+
+    if (!number || !name || name === 'Name') return;
+
+    if (!teamSlug || teamNamesMatch(team, teamSlug)) {
+      players.push({
+        number,
+        name,
+        team,
+        gp: parseInt(statsDoc(cells[3]).text().trim(), 10) || 0,
+        g: parseInt(statsDoc(cells[4]).text().trim(), 10) || 0,
+        a: parseInt(statsDoc(cells[5]).text().trim(), 10) || 0,
+        pts: parseInt(statsDoc(cells[6]).text().trim(), 10) || 0,
+        pims: parseInt(statsDoc(cells[7]).text().trim(), 10) || 0,
+      });
     }
   });
 
@@ -339,7 +369,9 @@ export async function getPlayerStats(
   if (playerFilter.name) {
     const normalizedSearch = normalizeTeamName(playerFilter.name);
     return (
-      players.find((p) => normalizeTeamName(p.name) === normalizedSearch) || null
+      players.find((p) => normalizeTeamName(p.name) === normalizedSearch) ||
+      players.find((p) => normalizeTeamName(p.name).includes(normalizedSearch)) ||
+      null
     );
   }
 
