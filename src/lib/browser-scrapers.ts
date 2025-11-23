@@ -87,10 +87,8 @@ export async function getScoreboardOptionsWithBrowser(
     const scheduleSelector = `${escapeIdForSelector(dom.scheduleSelectId)} option`;
     const teamSelector = `${escapeIdForSelector(dom.teamSelectId)} option`;
 
-    // Extract initial seasons
-    let seasons = parsed.options.seasons.length
-      ? parsed.options.seasons
-      : await extractSelectOptions(page, seasonSelector);
+    // Always read live options from the page so we see JSF/AJAX updates
+    let seasons = await extractSelectOptions(page, seasonSelector);
 
     // Select season if requested
     if (seasonQuery) {
@@ -112,9 +110,7 @@ export async function getScoreboardOptionsWithBrowser(
     }
 
     // Extract schedules (now populated based on season)
-    let schedules = parsed.options.schedules.length
-      ? parsed.options.schedules
-      : await extractSelectOptions(page, scheduleSelector);
+    let schedules = await extractSelectOptions(page, scheduleSelector);
 
     // Select schedule if requested
     if (scheduleQuery) {
@@ -137,9 +133,7 @@ export async function getScoreboardOptionsWithBrowser(
     }
 
     // Extract teams (NOW populated by JavaScript!)
-    let teams = parsed.options.teams.length
-      ? parsed.options.teams
-      : await extractSelectOptions(page, teamSelector);
+    let teams = await extractSelectOptions(page, teamSelector);
 
     // Select team if requested
     if (teamQuery) {
@@ -337,31 +331,32 @@ export async function downloadScheduleCSVWithBrowser(
     const scheduleSelector = `${escapeIdForSelector(dom.scheduleSelectId)} option`;
     const teamSelector = `${escapeIdForSelector(dom.teamSelectId)} option`;
 
-    // Select season
-    const seasons = parsed.options.seasons.length
-      ? parsed.options.seasons
-      : await extractSelectOptions(page, seasonSelector);
-    const targetSeason = seasons.find(s => s.label.toLowerCase().includes(season.toLowerCase()));
+    // Select season (always read from live DOM)
+    let seasons = await extractSelectOptions(page, seasonSelector);
+    const targetSeason = seasons.find(s =>
+      s.label.toLowerCase().includes(season.toLowerCase())
+    );
     if (!targetSeason) throw new Error(`Season "${season}" not found`);
 
     await page.select(escapeIdForSelector(dom.seasonSelectId), targetSeason.value);
     await page.waitForNetworkIdle({ timeout: 10000 });
+    seasons = await extractSelectOptions(page, seasonSelector);
 
-    // Select schedule
-    const schedules = parsed.options.schedules.length
-      ? parsed.options.schedules
-      : await extractSelectOptions(page, scheduleSelector);
-    const targetSchedule = schedules.find(s => s.label.toLowerCase().includes(schedule.toLowerCase()));
+    // Select schedule (based on updated season)
+    let schedules = await extractSelectOptions(page, scheduleSelector);
+    const targetSchedule = schedules.find(s =>
+      s.label.toLowerCase().includes(schedule.toLowerCase())
+    );
     if (!targetSchedule) throw new Error(`Schedule "${schedule}" not found`);
 
     await page.select(escapeIdForSelector(dom.scheduleSelectId), targetSchedule.value);
     await page.waitForNetworkIdle({ timeout: 10000 });
+    let teams = await extractSelectOptions(page, teamSelector);
 
-    // Select team
-    const teams = parsed.options.teams.length
-      ? parsed.options.teams
-      : await extractSelectOptions(page, teamSelector);
-    const targetTeam = teams.find(t => t.label.toLowerCase().includes(team.toLowerCase()));
+    // Select team (from dynamically populated list)
+    const targetTeam = teams.find(t =>
+      t.label.toLowerCase().includes(team.toLowerCase())
+    );
     if (!targetTeam) throw new Error(`Team "${team}" not found`);
 
     await page.select(escapeIdForSelector(dom.teamSelectId), targetTeam.value);

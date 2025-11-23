@@ -26,7 +26,15 @@ export interface StatsCentralDomIds {
 }
 
 export function escapeIdForSelector(id: string): string {
-  return `#${id.replace(/:/g, '\\\\:')}`;
+  // Use an attribute selector instead of an ID selector so we don't have to
+  // worry about escaping JSF-style IDs that contain ":" or other characters.
+  // Example: id="j_id_4e:j_id_4oInner" → [id="j_id_4e:j_id_4oInner"]
+  //
+  // Attribute selectors treat the value as a plain string, so colons and other
+  // punctuation are safe without escaping. We only need to escape double quotes
+  // in the unlikely event they appear in the ID.
+  const safeId = id.replace(/"/g, '\\"');
+  return `[id="${safeId}"]`;
 }
 
 function parseOptionsFromSelect(
