@@ -1,5 +1,5 @@
-import puppeteer, { type Page } from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
+import { chromium, type Page } from 'playwright-core';
+import sparticuzChromium from '@sparticuz/chromium';
 import { SelectOption, ScoreboardOptionState, TeamStats, TeamRoster, PlayerStats, GoalieStats } from './types.js';
 import { teamNamesMatch } from './utils.js';
 import { escapeIdForSelector, parseScoreboardPage, parseStatsCentralPage } from './scaha-dom.js';
@@ -11,12 +11,12 @@ const STATS_CENTRAL_URL = `${BASE_URL}/scaha/statscentral.xhtml`;
 /**
  * Get browser executable path based on environment
  */
-async function getBrowserConfig() {
+async function getLaunchConfig() {
   // In production (Vercel), use @sparticuz/chromium
   if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
     return {
-      args: chromium.args,
-      executablePath: await chromium.executablePath(),
+      args: sparticuzChromium.args,
+      executablePath: await sparticuzChromium.executablePath(),
       headless: true,
     };
   }
@@ -24,7 +24,7 @@ async function getBrowserConfig() {
   // In development, use local Chrome/Chromium
   return {
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    executablePath: process.env.CHROME_EXECUTABLE_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: process.env.CHROME_EXECUTABLE_PATH || '/usr/bin/google-chrome',
     headless: true,
   };
 }
@@ -33,8 +33,8 @@ async function getBrowserConfig() {
  * Extract select options from a dropdown element
  */
 async function extractSelectOptions(page: Page, selector: string): Promise<SelectOption[]> {
-  return page.$$eval(selector, (options: Element[]) =>
-    options.map(opt => {
+  const options = await page.locator(`${selector} option`).evaluateAll((opts) => 
+    opts.map((opt) => {
       const htmlOpt = opt as HTMLOptionElement;
       return {
         value: htmlOpt.value,
@@ -43,6 +43,7 @@ async function extractSelectOptions(page: Page, selector: string): Promise<Selec
       };
     })
   );
+  return options;
 }
 
 function findOption(
@@ -64,101 +65,89 @@ export async function getScoreboardOptionsWithBrowser(
   scheduleQuery?: string,
   teamQuery?: string
 ): Promise<ScoreboardOptionState> {
-  const browserConfig = await getBrowserConfig();
-  const browser = await puppeteer.launch(browserConfig);
+  const launchConfig = await getLaunchConfig();
+  const browser = await chromium.launch(launchConfig);
 
   try {
-    const page = await browser.newPage();
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 720 },
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+    });
+    
+    // Optimize: Block images/css
+    await context.route('**/*.{png,jpg,jpeg,svg,css,woff,woff2}', route => route.abort());
 
-    // Set a reasonable viewport and user agent
-    await page.setViewport({ width: 1280, height: 720 });
-    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36');
+    const page = await context.newPage();
 
     // Navigate to scoreboard
     await page.goto(SCOREBOARD_URL, {
-      waitUntil: 'networkidle0',
+      waitUntil: 'networkidle',
       timeout: 30000,
     });
 
     const initialMarkup = await page.content();
     const parsed = parseScoreboardPage(initialMarkup);
     const { dom } = parsed;
-    const seasonSelector = `${escapeIdForSelector(dom.seasonSelectId)} option`;
-    const scheduleSelector = `${escapeIdForSelector(dom.scheduleSelectId)} option`;
-    const teamSelector = `${escapeIdForSelector(dom.teamSelectId)} option`;
+    const seasonSelector = escapeIdForSelector(dom.seasonSelectId);
+    const scheduleSelector = escapeIdForSelector(dom.scheduleSelectId);
+    const teamSelector = escapeIdForSelector(dom.teamSelectId);
 
     // Always read live options from the page so we see JSF/AJAX updates
     let seasons = await extractSelectOptions(page, seasonSelector);
 
-    // Select season if requested
+    // 1. Select Season
     if (seasonQuery) {
       const targetSeason = seasons.find(s =>
         s.label.toLowerCase().includes(seasonQuery.toLowerCase())
       );
 
-      if (!targetSeason) {
-        throw new Error(`Season "${seasonQuery}" not found`);
-      }
+      if (!targetSeason) throw new Error(`Season "${seasonQuery}" not found`);
 
       if (!targetSeason.selected) {
-        await page.select(escapeIdForSelector(dom.seasonSelectId), targetSeason.value);
-        await page.waitForNetworkIdle({ timeout: 10000 });
-
-        // Re-extract seasons to get updated state
+        await page.selectOption(seasonSelector, targetSeason.value);
+        await page.waitForLoadState('networkidle', { timeout: 10000 });
         seasons = await extractSelectOptions(page, seasonSelector);
       }
     }
 
-    // Extract schedules (now populated based on season)
+    // 2. Select Schedule
     let schedules = await extractSelectOptions(page, scheduleSelector);
-
-    // Select schedule if requested
     if (scheduleQuery) {
       const targetSchedule = schedules.find(s =>
         s.label.toLowerCase().includes(scheduleQuery.toLowerCase())
       );
 
-      if (!targetSchedule) {
-        throw new Error(`Schedule "${scheduleQuery}" not found`);
-      }
+      if (!targetSchedule) throw new Error(`Schedule "${scheduleQuery}" not found`);
 
       if (!targetSchedule.selected) {
-        await page.select(escapeIdForSelector(dom.scheduleSelectId), targetSchedule.value);
-        // Wait for the AJAX call to populate teams - this is the key!
-        await page.waitForNetworkIdle({ timeout: 10000 });
-
-        // Re-extract schedules to get updated state
+        await page.selectOption(scheduleSelector, targetSchedule.value);
+        // Robust wait for teams to populate
+        await page.waitForFunction((sel) => {
+          const select = document.querySelector(sel) as HTMLSelectElement;
+          return select && select.options.length > 1;
+        }, teamSelector, { timeout: 10000 });
+        await page.waitForLoadState('networkidle', { timeout: 10000 });
         schedules = await extractSelectOptions(page, scheduleSelector);
       }
     }
 
-    // Extract teams (NOW populated by JavaScript!)
+    // 3. Select Team
     let teams = await extractSelectOptions(page, teamSelector);
-
-    // Select team if requested
     if (teamQuery) {
       const targetTeam = teams.find(t =>
         t.label.toLowerCase().includes(teamQuery.toLowerCase())
       );
 
-      if (!targetTeam) {
-        throw new Error(`Team "${teamQuery}" not found`);
-      }
+      if (!targetTeam) throw new Error(`Team "${teamQuery}" not found`);
 
       if (!targetTeam.selected) {
-        await page.select(escapeIdForSelector(dom.teamSelectId), targetTeam.value);
-        await page.waitForNetworkIdle({ timeout: 10000 });
-
-        // Re-extract teams to get updated state
+        await page.selectOption(teamSelector, targetTeam.value);
+        await page.waitForLoadState('networkidle', { timeout: 10000 });
         teams = await extractSelectOptions(page, teamSelector);
       }
     }
 
-    return {
-      seasons,
-      schedules,
-      teams,
-    };
+    return { seasons, schedules, teams };
   } finally {
     await browser.close();
   }
@@ -171,82 +160,58 @@ export async function getStandingsWithBrowser(
   season: string,
   schedule: string
 ): Promise<TeamStats[]> {
-  const browserConfig = await getBrowserConfig();
-  const browser = await puppeteer.launch(browserConfig);
+  const launchConfig = await getLaunchConfig();
+  const browser = await chromium.launch(launchConfig);
 
   try {
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 720 });
-    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36');
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 720 },
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+    });
+    
+    await context.route('**/*.{png,jpg,jpeg,svg,css,woff,woff2}', route => route.abort());
+
+    const page = await context.newPage();
 
     await page.goto(SCOREBOARD_URL, {
-      waitUntil: 'networkidle0',
+      waitUntil: 'networkidle',
       timeout: 30000,
     });
 
     const initialMarkup = await page.content();
     const parsed = parseScoreboardPage(initialMarkup);
     const { dom } = parsed;
-    const seasonSelector = `${escapeIdForSelector(dom.seasonSelectId)} option`;
-    const scheduleSelector = `${escapeIdForSelector(dom.scheduleSelectId)} option`;
+    const seasonSelector = escapeIdForSelector(dom.seasonSelectId);
+    const scheduleSelector = escapeIdForSelector(dom.scheduleSelectId);
     const standingsSelector = `${escapeIdForSelector(`${dom.formId}:parts`)} tbody tr`;
 
     const normalizeSeasonQuery = (value: string) =>
       value.replace(/-/g, '/').replace(/\s+/g, ' ').trim();
 
     const normalizedSeason = normalizeSeasonQuery(season);
-    const seasonQueries = [
-      season,
-      normalizedSeason,
-      `SCAHA ${normalizedSeason}`,
-      `SCAHA ${normalizedSeason} Season`,
-    ].filter(Boolean) as string[];
+    const seasonQueries = [season, normalizedSeason, `SCAHA ${normalizedSeason}`, `SCAHA ${normalizedSeason} Season`].filter(Boolean) as string[];
 
-    let seasons = parsed.options.seasons.length
-      ? parsed.options.seasons
-      : await extractSelectOptions(page, seasonSelector);
-    const seasonOption =
-      seasonQueries
-        .map((query) => findOption(seasons, query))
-        .find((opt): opt is SelectOption => Boolean(opt)) ??
-      seasons.find((opt) => opt.selected);
+    let seasons = await extractSelectOptions(page, seasonSelector);
+    const seasonOption = seasonQueries.map((query) => findOption(seasons, query)).find((opt): opt is SelectOption => Boolean(opt)) ?? seasons.find((opt) => opt.selected);
 
-    if (!seasonOption) {
-      throw new Error(`Season "${season}" not found on scoreboard page`);
-    }
+    if (!seasonOption) throw new Error(`Season "${season}" not found`);
 
     if (!seasonOption.selected) {
-      await page.select(escapeIdForSelector(dom.seasonSelectId), seasonOption.value);
-      await page.waitForNetworkIdle({ timeout: 15000 });
+      await page.selectOption(seasonSelector, seasonOption.value);
+      await page.waitForLoadState('networkidle', { timeout: 15000 });
       seasons = await extractSelectOptions(page, seasonSelector);
     }
 
-    const normalizeScheduleQuery = (value: string) =>
-      value.replace(/regular season/gi, '').trim();
+    const scheduleQueries = [`${schedule} Regular Season`, schedule, `${schedule} Season`].filter(Boolean) as string[];
 
-    const scheduleQueries = [
-      `${schedule} Regular Season`,  // Try "14U B Regular Season" first
-      schedule,                        // Then try "14U B"
-      `${schedule} Season`,
-      normalizeScheduleQuery(schedule),
-    ].filter(Boolean) as string[];
+    let schedules = await extractSelectOptions(page, scheduleSelector);
+    const scheduleOption = scheduleQueries.map((query) => findOption(schedules, query)).find((opt): opt is SelectOption => Boolean(opt)) ?? schedules.find((opt) => opt.selected);
 
-    let schedules = parsed.options.schedules.length
-      ? parsed.options.schedules
-      : await extractSelectOptions(page, scheduleSelector);
-    const scheduleOption =
-      scheduleQueries
-        .map((query) => findOption(schedules, query))
-        .find((opt): opt is SelectOption => Boolean(opt)) ??
-      schedules.find((opt) => opt.selected);
-
-    if (!scheduleOption) {
-      throw new Error(`Schedule "${schedule}" not found for season "${season}"`);
-    }
+    if (!scheduleOption) throw new Error(`Schedule "${schedule}" not found`);
 
     if (!scheduleOption.selected) {
-      await page.select(escapeIdForSelector(dom.scheduleSelectId), scheduleOption.value);
-      await page.waitForNetworkIdle({ timeout: 15000 });
+      await page.selectOption(scheduleSelector, scheduleOption.value);
+      await page.waitForLoadState('networkidle', { timeout: 15000 });
       schedules = await extractSelectOptions(page, scheduleSelector);
     }
 
@@ -255,44 +220,27 @@ export async function getStandingsWithBrowser(
         const rows = document.querySelectorAll(selector);
         return Array.from(rows).some((row) => row.querySelectorAll('td').length >= 10);
       },
-      { timeout: 15000 },
-      standingsSelector
+      standingsSelector,
+      { timeout: 15000 }
     );
 
-    const standings = await page.$$eval(standingsSelector, (rows) => {
+    const standings = await page.locator(standingsSelector).evaluateAll((rows) => {
       const results = [];
-
       for (const row of rows) {
-        const cells = Array.from(row.querySelectorAll('td')).map((cell) =>
-          (cell.textContent || '').trim()
-        );
-
-        if (cells.length < 10 || !cells[1]) {
-          continue;
-        }
-
-        const gp = Number.parseInt(cells[2], 10);
-        const w = Number.parseInt(cells[3], 10);
-        const l = Number.parseInt(cells[4], 10);
-        const t = Number.parseInt(cells[5], 10);
-        const points = Number.parseInt(cells[6], 10);
-        const gf = Number.parseInt(cells[7], 10);
-        const ga = Number.parseInt(cells[8], 10);
-        const gd = Number.parseInt(cells[9], 10);
-
+        const cells = Array.from(row.querySelectorAll('td')).map((cell) => (cell.textContent || '').trim());
+        if (cells.length < 10 || !cells[1]) continue;
         results.push({
           team: cells[1],
-          gp: Number.isNaN(gp) ? 0 : gp,
-          w: Number.isNaN(w) ? 0 : w,
-          l: Number.isNaN(l) ? 0 : l,
-          t: Number.isNaN(t) ? 0 : t,
-          points: Number.isNaN(points) ? 0 : points,
-          gf: Number.isNaN(gf) ? 0 : gf,
-          ga: Number.isNaN(ga) ? 0 : ga,
-          gd: Number.isNaN(gd) ? 0 : gd,
+          gp: parseInt(cells[2], 10) || 0,
+          w: parseInt(cells[3], 10) || 0,
+          l: parseInt(cells[4], 10) || 0,
+          t: parseInt(cells[5], 10) || 0,
+          points: parseInt(cells[6], 10) || 0,
+          gf: parseInt(cells[7], 10) || 0,
+          ga: parseInt(cells[8], 10) || 0,
+          gd: parseInt(cells[9], 10) || 0,
         });
       }
-
       return results;
     });
 
@@ -310,144 +258,89 @@ export async function downloadScheduleCSVWithBrowser(
   schedule: string,
   team: string
 ): Promise<string> {
-  const browserConfig = await getBrowserConfig();
-  const browser = await puppeteer.launch(browserConfig);
+  const launchConfig = await getLaunchConfig();
+  const browser = await chromium.launch(launchConfig);
 
   try {
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 720 });
-    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36');
-
-    // Navigate and select options
-    await page.goto(SCOREBOARD_URL, {
-      waitUntil: 'networkidle0',
-      timeout: 30000,
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 720 },
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
     });
+    
+    await context.route('**/*.{png,jpg,jpeg,svg,css,woff,woff2}', route => route.abort());
+    const page = await context.newPage();
+
+    await page.goto(SCOREBOARD_URL, { waitUntil: 'networkidle', timeout: 30000 });
 
     const initialMarkup = await page.content();
     const parsed = parseScoreboardPage(initialMarkup);
     const { dom } = parsed;
-    const seasonSelector = `${escapeIdForSelector(dom.seasonSelectId)} option`;
-    const scheduleSelector = `${escapeIdForSelector(dom.scheduleSelectId)} option`;
-    const teamSelector = `${escapeIdForSelector(dom.teamSelectId)} option`;
+    const seasonSelector = escapeIdForSelector(dom.seasonSelectId);
+    const scheduleSelector = escapeIdForSelector(dom.scheduleSelectId);
+    const teamSelector = escapeIdForSelector(dom.teamSelectId);
 
-    // Select season (always read from live DOM)
+    // 1. Select Season
     let seasons = await extractSelectOptions(page, seasonSelector);
-    const targetSeason = seasons.find(s =>
-      s.label.toLowerCase().includes(season.toLowerCase())
-    );
+    const targetSeason = seasons.find(s => s.label.toLowerCase().includes(season.toLowerCase()));
     if (!targetSeason) throw new Error(`Season "${season}" not found`);
 
-    await page.select(escapeIdForSelector(dom.seasonSelectId), targetSeason.value);
-    await page.waitForNetworkIdle({ timeout: 10000 });
-    seasons = await extractSelectOptions(page, seasonSelector);
+    if (!targetSeason.selected) {
+      await page.selectOption(seasonSelector, targetSeason.value);
+      await page.waitForLoadState('networkidle', { timeout: 10000 });
+    }
 
-    // Select schedule (based on updated season)
+    // 2. Select Schedule
     let schedules = await extractSelectOptions(page, scheduleSelector);
-    const targetSchedule = schedules.find(s =>
-      s.label.toLowerCase().includes(schedule.toLowerCase())
-    );
+    const targetSchedule = schedules.find(s => s.label.toLowerCase().includes(schedule.toLowerCase()));
     if (!targetSchedule) throw new Error(`Schedule "${schedule}" not found`);
 
-    await page.select(escapeIdForSelector(dom.scheduleSelectId), targetSchedule.value);
-    await page.waitForNetworkIdle({ timeout: 10000 });
-    let teams = await extractSelectOptions(page, teamSelector);
+    if (!targetSchedule.selected) {
+      await page.selectOption(scheduleSelector, targetSchedule.value);
+      // Robust wait for teams to populate
+      await page.waitForFunction((sel) => {
+        const select = document.querySelector(sel) as HTMLSelectElement;
+        return select && select.options.length > 1;
+      }, teamSelector, { timeout: 10000 });
+      await page.waitForLoadState('networkidle', { timeout: 10000 });
+    }
 
-    // Select team (from dynamically populated list)
-    const targetTeam = teams.find(t =>
-      t.label.toLowerCase().includes(team.toLowerCase())
-    );
+    // 3. Select Team
+    let teams = await extractSelectOptions(page, teamSelector);
+    const targetTeam = teams.find(t => t.label.toLowerCase().includes(team.toLowerCase()));
     if (!targetTeam) throw new Error(`Team "${team}" not found`);
 
-    await page.select(escapeIdForSelector(dom.teamSelectId), targetTeam.value);
-    await page.waitForNetworkIdle({ timeout: 10000 });
+    if (!targetTeam.selected) {
+      await page.selectOption(teamSelector, targetTeam.value);
+      await page.waitForLoadState('networkidle', { timeout: 10000 });
+    }
 
     // After selecting the team, the schedule table should be visible
-    // Extract it immediately before any navigation happens
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Brief wait for table to populate
+    await page.waitForTimeout(1000); 
 
-    let tableData: string | null = null;
-
-    try {
-      // Try to extract the schedule table data
-      // The schedule table has columns like: Game #, Date, Time, Type, Status, Home, Away, Venue
-      tableData = await page.evaluate(() => {
-        // Find all tables and look for the one with schedule data
-        const tables = Array.from(document.querySelectorAll('table'));
-        let scheduleTable = null;
-
-        for (const table of tables) {
-          const headerText = Array.from(table.querySelectorAll('thead th'))
-            .map(th => th.textContent?.trim().toLowerCase() || '')
-            .join(' ');
-
-          // Schedule table should have "game" and "date" columns
-          if (headerText.includes('game') && headerText.includes('date')) {
-            scheduleTable = table;
-            break;
-          }
+    const tableData = await page.evaluate(() => {
+      const tables = Array.from(document.querySelectorAll('table'));
+      let scheduleTable = null;
+      for (const table of tables) {
+        const headerText = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent?.trim().toLowerCase() || '').join(' ');
+        if (headerText.includes('game') && headerText.includes('date')) {
+          scheduleTable = table;
+          break;
         }
-
-        if (!scheduleTable) return null;
-
-        const rows: string[][] = [];
-
-        // Get headers
-        const headerCells = scheduleTable.querySelectorAll('thead th');
-        if (headerCells.length > 0) {
-          rows.push(Array.from(headerCells).map(cell => cell.textContent?.trim() || ''));
-        }
-
-        // Get body rows
-        const bodyRows = scheduleTable.querySelectorAll('tbody tr');
-        bodyRows.forEach(row => {
-          const cells = row.querySelectorAll('td');
-          if (cells.length > 0) {
-            rows.push(Array.from(cells).map(cell => cell.textContent?.trim() || ''));
-          }
-        });
-
-        if (rows.length > 0) {
-          return rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
-        }
-        return null;
-      });
-    } catch (error) {
-      // Fallback: try to get the page content and parse with cheerio
-      try {
-        const content = await page.content();
-        if (content && content.includes('<table')) {
-          const cheerio = await import('cheerio');
-          const $ = cheerio.load(content);
-          const rows: string[][] = [];
-
-          $('table thead th').each((_, el) => {
-            if (rows.length === 0) rows.push([]);
-            rows[0].push($(el).text().trim());
-          });
-
-          $('table tbody tr').each((_, row) => {
-            const rowData: string[] = [];
-            $(row).find('td').each((_, cell) => {
-              rowData.push($(cell).text().trim());
-            });
-            if (rowData.length > 0) rows.push(rowData);
-          });
-
-          if (rows.length > 0) {
-            tableData = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
-          }
-        }
-      } catch (cheerioError) {
-        throw new Error(`Failed to extract table data: ${error}`);
       }
-    }
+      if (!scheduleTable) return null;
+      const rows: string[][] = [];
+      const headerCells = scheduleTable.querySelectorAll('thead th');
+      if (headerCells.length > 0) rows.push(Array.from(headerCells).map(cell => cell.textContent?.trim() || ''));
+      const bodyRows = scheduleTable.querySelectorAll('tbody tr');
+      bodyRows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length > 0) rows.push(Array.from(cells).map(cell => cell.textContent?.trim() || ''));
+      });
+      return rows.length > 0 ? rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n') : null;
+    });
 
-    if (tableData) {
-      return tableData;
-    }
-
-    throw new Error('Could not find schedule table data after selecting team');
+    if (!tableData) throw new Error('Could not find schedule table data');
+    return tableData;
   } finally {
     await browser.close();
   }
@@ -461,188 +354,91 @@ export async function getTeamRosterWithBrowser(
   division: string,
   teamSlug: string
 ): Promise<TeamRoster> {
-  const browserConfig = await getBrowserConfig();
-  const browser = await puppeteer.launch(browserConfig);
+  const launchConfig = await getLaunchConfig();
+  const browser = await chromium.launch(launchConfig);
 
   try {
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 720 });
-    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36');
-
-    await page.goto(STATS_CENTRAL_URL, {
-      waitUntil: 'networkidle0',
-      timeout: 30000,
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 720 },
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
     });
+    
+    await context.route('**/*.{png,jpg,jpeg,svg,css,woff,woff2}', route => route.abort());
+    const page = await context.newPage();
+
+    await page.goto(STATS_CENTRAL_URL, { waitUntil: 'networkidle', timeout: 30000 });
 
     const initialMarkup = await page.content();
     const parsed = parseStatsCentralPage(initialMarkup);
     let { dom, seasons, schedules } = parsed;
-    const seasonSelector = `[id="${dom.seasonSelectId}"] option`;
-    const scheduleSelector = `[id="${dom.scheduleSelectId}"] option`;
-    const seasonControl = `[id="${dom.seasonSelectId}"]`;
-    const scheduleControl = `[id="${dom.scheduleSelectId}"]`;
-    const playersButtonSelector = `[id="${dom.playersButtonId}"]`;
-    const goaliesButtonSelector = `[id="${dom.goaliesButtonId}"]`;
+    const seasonSelector = escapeIdForSelector(dom.seasonSelectId);
+    const scheduleSelector = escapeIdForSelector(dom.scheduleSelectId);
+    const playersButton = `[id="${dom.playersButtonId}"]`;
+    const goaliesButton = `[id="${dom.goaliesButtonId}"]`;
     const playersTableSelector = `[id="${dom.playersTableId}"] tbody tr`;
     const goaliesTableSelector = `[id="${dom.goaliesTableId}"] tbody tr`;
 
-    // Helper function to normalize season queries
-    const normalizeSeasonQuery = (value: string) =>
-      value.replace(/-/g, '/').replace(/\s+/g, ' ').trim();
-
-    const normalizedSeason = normalizeSeasonQuery(season);
-    const seasonQueries = [
-      season,
-      normalizedSeason,
-      `SCAHA ${normalizedSeason}`,
-      `SCAHA ${normalizedSeason} Season`,
-    ].filter(Boolean) as string[];
-
-    // Extract and select season
-    seasons = seasons.length
-      ? seasons
-      : await extractSelectOptions(page, seasonSelector);
-    const seasonOption =
-      seasonQueries
-        .map((query) => findOption(seasons, query))
-        .find((opt): opt is SelectOption => Boolean(opt)) ??
-      seasons.find((opt) => opt.selected);
-
-    if (!seasonOption) {
-      throw new Error(`Season "${season}" not found on stats central page`);
-    }
-
+    // 1. Season
+    seasons = await extractSelectOptions(page, seasonSelector);
+    const seasonOption = findOption(seasons, season) ?? seasons.find((opt) => opt.selected);
+    if (!seasonOption) throw new Error(`Season "${season}" not found`);
     if (!seasonOption.selected) {
-      await page.select(seasonControl, seasonOption.value);
-      await page.waitForNetworkIdle({ timeout: 15000 });
-      seasons = await extractSelectOptions(page, seasonSelector);
+      await page.selectOption(seasonSelector, seasonOption.value);
+      await page.waitForLoadState('networkidle', { timeout: 15000 });
     }
 
-    // Helper function to normalize schedule queries
-    const normalizeScheduleQuery = (value: string) =>
-      value.replace(/regular season/gi, '').trim();
-
-    const scheduleQueries = [
-      `${division} Regular Season`,
-      division,
-      `${division} Season`,
-      normalizeScheduleQuery(division),
-    ].filter(Boolean) as string[];
-
-    // Extract and select schedule/division
-    schedules = schedules.length
-      ? schedules
-      : await extractSelectOptions(page, scheduleSelector);
-    const scheduleOption =
-      scheduleQueries
-        .map((query) => findOption(schedules, query))
-        .find((opt): opt is SelectOption => Boolean(opt)) ??
-      schedules.find((opt) => opt.selected);
-
-    if (!scheduleOption) {
-      throw new Error(`Division "${division}" not found for season "${season}"`);
-    }
-
+    // 2. Schedule
+    schedules = await extractSelectOptions(page, scheduleSelector);
+    const scheduleOption = findOption(schedules, division) ?? schedules.find((opt) => opt.selected);
+    if (!scheduleOption) throw new Error(`Division "${division}" not found`);
     if (!scheduleOption.selected) {
-      await page.select(scheduleControl, scheduleOption.value);
-      await page.waitForNetworkIdle({ timeout: 15000 });
-      schedules = await extractSelectOptions(page, scheduleSelector);
+      await page.selectOption(scheduleSelector, scheduleOption.value);
+      await page.waitForLoadState('networkidle', { timeout: 15000 });
     }
 
-    // Click Players button to load player stats
-    await page.click(playersButtonSelector);
-    await page.waitForNetworkIdle({ timeout: 15000 });
-
-    // Wait for player stats table to appear
+    // 3. Extract Players
+    await page.click(playersButton);
+    await page.waitForLoadState('networkidle', { timeout: 15000 });
     await page.waitForSelector(playersTableSelector, { timeout: 15000 });
-
-    // Extract player stats
-    const players = await page.$$eval(playersTableSelector, (rows) => {
+    const players = await page.locator(playersTableSelector).evaluateAll((rows) => {
       const results: PlayerStats[] = [];
-
       for (const row of rows) {
-        const cells = Array.from(row.querySelectorAll('td')).map((cell) =>
-          (cell.textContent || '').trim()
-        );
-
-        if (cells.length < 8 || !cells[0] || !cells[1] || cells[1] === 'Name') {
-          continue;
-        }
-
+        const cells = Array.from(row.querySelectorAll('td')).map((cell) => (cell.textContent || '').trim());
+        if (cells.length < 8 || !cells[0] || !cells[1] || cells[1] === 'Name') continue;
         results.push({
-          number: cells[0],
-          name: cells[1],
-          team: cells[2],
-          gp: Number.parseInt(cells[3], 10) || 0,
-          g: Number.parseInt(cells[4], 10) || 0,
-          a: Number.parseInt(cells[5], 10) || 0,
-          pts: Number.parseInt(cells[6], 10) || 0,
-          pims: Number.parseInt(cells[7], 10) || 0,
+          number: cells[0], name: cells[1], team: cells[2],
+          gp: parseInt(cells[3], 10) || 0, g: parseInt(cells[4], 10) || 0,
+          a: parseInt(cells[5], 10) || 0, pts: parseInt(cells[6], 10) || 0,
+          pims: parseInt(cells[7], 10) || 0,
         });
       }
-
       return results;
     });
 
-    // Click Goalies button to load goalie stats
-    await page.click(goaliesButtonSelector);
-    await page.waitForNetworkIdle({ timeout: 15000 });
-
-    // Wait for goalie stats table to appear
+    // 4. Extract Goalies
+    await page.click(goaliesButton);
+    await page.waitForLoadState('networkidle', { timeout: 15000 });
     await page.waitForSelector(goaliesTableSelector, { timeout: 15000 });
-
-    // Extract goalie stats
-    const goalies = await page.$$eval(goaliesTableSelector, (rows) => {
+    const goalies = await page.locator(goaliesTableSelector).evaluateAll((rows) => {
       const results: GoalieStats[] = [];
-
       for (const row of rows) {
-        const cells = Array.from(row.querySelectorAll('td')).map((cell) =>
-          (cell.textContent || '').trim()
-        );
-
-        if (cells.length < 9 || !cells[0] || !cells[1] || cells[1] === 'Name') {
-          continue;
-        }
-
-        const parseFloatOrNull = (value: string) => {
-          const parsed = Number.parseFloat(value);
-          return Number.isFinite(parsed) ? parsed : null;
-        };
-
+        const cells = Array.from(row.querySelectorAll('td')).map((cell) => (cell.textContent || '').trim());
+        if (cells.length < 9 || !cells[0] || !cells[1] || cells[1] === 'Name') continue;
         results.push({
-          number: cells[0],
-          name: cells[1],
-          team: cells[2],
-          gp: Number.parseInt(cells[3], 10) || 0,
-          mins: Number.parseInt(cells[4], 10) || 0,
-          shots: Number.parseInt(cells[5], 10) || 0,
-          saves: Number.parseInt(cells[6], 10) || 0,
-          sv_pct: parseFloatOrNull(cells[7]),
-          gaa: parseFloatOrNull(cells[8]),
+          number: cells[0], name: cells[1], team: cells[2],
+          gp: parseInt(cells[3], 10) || 0, mins: parseInt(cells[4], 10) || 0,
+          shots: parseInt(cells[5], 10) || 0, saves: parseInt(cells[6], 10) || 0,
+          sv_pct: parseFloat(cells[7]) || null, gaa: parseFloat(cells[8]) || null,
         });
       }
-
       return results;
     });
 
-    // Filter by team
     const filteredPlayers = players.filter((p) => teamNamesMatch(p.team, teamSlug));
     const filteredGoalies = goalies.filter((g) => teamNamesMatch(g.team, teamSlug));
+    if (filteredPlayers.length === 0 && filteredGoalies.length === 0) throw new Error(`No roster found for team "${teamSlug}"`);
 
-    if (filteredPlayers.length === 0 && filteredGoalies.length === 0) {
-      throw new Error(`No roster data found for team "${teamSlug}" in division "${division}"`);
-    }
-
-    // Determine the actual team name from the first player/goalie found
-    const actualTeamName = filteredPlayers[0]?.team || filteredGoalies[0]?.team || teamSlug;
-
-    return {
-      team: actualTeamName,
-      division,
-      season,
-      players: filteredPlayers,
-      goalies: filteredGoalies,
-    };
+    return { team: filteredPlayers[0]?.team || filteredGoalies[0]?.team || teamSlug, division, season, players: filteredPlayers, goalies: filteredGoalies };
   } finally {
     await browser.close();
   }
